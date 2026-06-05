@@ -743,10 +743,9 @@ function bdopt_get_backups() {
 }
 
 function bdopt_delete_backup( $name ) {
-    $dir = bdopt_backup_dir();
-    $path = $dir . '/' . basename( $name );
-    if ( strpos( realpath( $path ), realpath( $dir ) ) !== 0 ) return false;
-    if ( ! file_exists( $path ) ) return false;
+    $dir  = realpath( bdopt_backup_dir() );
+    $path = realpath( $dir . DIRECTORY_SEPARATOR . basename( $name ) );
+    if ( false === $path || strpos( $path, $dir . DIRECTORY_SEPARATOR ) !== 0 ) return false;
     return unlink( $path );
 }
 
@@ -1127,7 +1126,7 @@ add_action('wp_ajax_bdopt_delete_backup', function() {
     check_ajax_referer('bdopt_nonce','nonce');
     if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
 
-    $name = isset( $_POST['name'] ) ? sanitize_file_name( $_POST['name'] ) : '';
+    $name = isset( $_POST['name'] ) ? basename( $_POST['name'] ) : '';
     if ( empty( $name ) ) wp_die( 'Invalid name', 400 );
 
     $ok = bdopt_delete_backup( $name );
@@ -2223,6 +2222,7 @@ document.getElementById('bdopt').addEventListener('click',function(e){
         del.disabled=true; del.innerHTML='<span class="bsp bsp-d"></span>';
         xpost({action:'bdopt_delete_backup',nonce:NONCE,name:name},
         function(res){
+            del.disabled=false; del.innerHTML=orig;
             if(res.success){
                 toast('\u2713 Backup deleted.',false);
                 renderBackups(res.data.backups);

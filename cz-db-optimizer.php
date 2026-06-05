@@ -787,9 +787,6 @@ function bdopt_create_backup( $progress = null ) {
             $progress( $i, $total, $name );
         }
 
-        // Small pause between tables to reduce server load
-        if ( $i > 1 ) usleep( 200000 );
-
         $create = $wpdb->get_row( "SHOW CREATE TABLE `{$name}`", ARRAY_N );
         if ( ! $create || empty( $create[1] ) ) continue;
 
@@ -802,7 +799,6 @@ function bdopt_create_backup( $progress = null ) {
 
         $offset     = 0;
         $chunk      = 500;
-        $chunk_ct   = 0;
         while ( $offset < $cnt ) {
             $rows = $wpdb->get_results( "SELECT * FROM `{$name}` LIMIT {$offset}, {$chunk}", ARRAY_N );
             if ( empty( $rows ) ) break;
@@ -815,8 +811,6 @@ function bdopt_create_backup( $progress = null ) {
                 $w( "INSERT INTO `{$name}` VALUES (" . implode( ',', $vals ) . ");\n" );
             }
             $offset += $chunk;
-            $chunk_ct++;
-            if ( $chunk_ct % 10 === 0 ) usleep( 100000 );
         }
         $w( "\n" );
     }
@@ -828,6 +822,134 @@ function bdopt_create_backup( $progress = null ) {
         'name' => $gz,
         'size' => filesize( $gzpath ),
         'date' => date( 'Y-m-d H:i:s', filemtime( $gzpath ) ),
+    );
+}
+
+// ================================================================
+// wp-content BACKUP
+// ================================================================
+function bdopt_wp_backup_dir() {
+    $dir = WP_CONTENT_DIR . '/backups';
+    if ( ! is_dir( $dir ) ) {
+        mkdir( $dir, 0755, true );
+        file_put_contents( $dir . '/.htaccess', "Deny from all\nRequire all denied\n" );
+        file_put_contents( $dir . '/index.php', "<?php // Silence\n" );
+    }
+    return $dir;
+}
+
+function bdopt_get_wp_backups() {
+    $dir = bdopt_wp_backup_dir();
+    $files = glob( $dir . '/wp-backup-*.zip' );
+    if ( empty( $files ) ) return array();
+    $backups = array();
+    foreach ( $files as $f ) {
+        $backups[] = array(
+            'name' => basename( $f ),
+            'size' => filesize( $f ),
+            'date' => date( 'Y-m-d H:i:s', filemtime( $f ) ),
+        );
+    }
+    usort( $backups, function( $a, $b ) {
+        return strcmp( $b['name'], $a['name'] );
+    } );
+    return $backups;
+}
+
+function bdopt_delete_wp_backup( $name ) {
+    $dir  = realpath( bdopt_wp_backup_dir() );
+    $path = realpath( $dir . DIRECTORY_SEPARATOR . basename( $name ) );
+    if ( false === $path || strpos( $path, $dir . DIRECTORY_SEPARATOR ) !== 0 ) return false;
+    return unlink( $path );
+}
+
+function bdopt_create_wp_backup( $progress = null ) {
+    $dir     = bdopt_wp_backup_dir();
+    $time    = current_time( 'Y-m-d-H-i-s' );
+    $zipname = "wp-backup-{$time}.zip";
+    $zippath = $dir . '/' . $zipname;
+
+    set_time_limit( 0 );
+    ignore_user_abort( true );
+
+    $source  = realpath( WP_CONTENT_DIR );
+    $exclude = array(
+        realpath( bdopt_wp_backup_dir() ),
+        realpath( bdopt_backup_dir() ),
+    );
+
+    if ( class_exists( 'ZipArchive' ) ) {
+        $zip = new ZipArchive();
+        if ( $zip->open( $zippath, ZipArchive::CREATE ) !== true ) return false;
+
+        $files = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator( $source, RecursiveDirectoryIterator::SKIP_DOTS ),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+
+        $total = 0;
+        $list  = array();
+        foreach ( $files as $file ) {
+            $rp = realpath( $file->getPathname() );
+            if ( $rp === false || $file->isDir() ) continue;
+            $skip = false;
+            foreach ( $exclude as $ex ) {
+                if ( $ex !== false && strpos( $rp, $ex ) === 0 ) { $skip = true; break; }
+            }
+            if ( $skip ) continue;
+            $list[] = $rp;
+            $total++;
+        }
+
+        if ( $total === 0 ) { $zip->close(); unlink( $zippath ); return false; }
+
+        $i = 0;
+        foreach ( $list as $rp ) {
+            $i++;
+            $local = ltrim( substr( $rp, strlen( $source ) + 1 ), '\\/' );
+            $zip->addFile( $rp, $local );
+            if ( $i % 200 === 0 && is_callable( $progress ) ) {
+                $progress( $i, $total, $local );
+            }
+        }
+        $zip->close();
+
+    } elseif ( class_exists( 'PharData' ) ) {
+        // Filter iterator to exclude backup dirs
+        $inner = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator( $source, FilesystemIterator::SKIP_DOTS ),
+            RecursiveIteratorIterator::SELF_FIRST
+        );
+        $filtered = new CallbackFilterIterator( $inner, function( $current ) use ( $exclude ) {
+            if ( $current->isDir() ) return false;
+            $rp = realpath( $current->getPathname() );
+            if ( $rp === false ) return false;
+            foreach ( $exclude as $ex ) {
+                if ( $ex !== false && strpos( $rp, $ex ) === 0 ) return false;
+            }
+            return true;
+        } );
+
+        try {
+            $phar = new PharData( $zippath );
+            $phar->buildFromIterator( $filtered, $source );
+        } catch ( Exception $e ) {
+            @unlink( $zippath );
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    if ( ! file_exists( $zippath ) || filesize( $zippath ) == 0 ) {
+        @unlink( $zippath );
+        return false;
+    }
+
+    return array(
+        'name' => $zipname,
+        'size' => filesize( $zippath ),
+        'date' => date( 'Y-m-d H:i:s', filemtime( $zippath ) ),
     );
 }
 
@@ -1218,6 +1340,117 @@ add_action('wp_ajax_bdopt_download_backup', function() {
 });
 
 // ================================================================
+// AJAX: wp-content BACKUP CREATE (background)
+// ================================================================
+add_action('wp_ajax_bdopt_create_wp_backup', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    set_transient( 'bdopt_wp_backup_progress', array(
+        'status' => 'running', 'pct' => 0, 'file' => '', 'error' => '',
+    ), HOUR_IN_SECONDS );
+
+    ignore_user_abort( true );
+    while ( ob_get_level() ) ob_end_clean();
+    $resp = wp_json_encode( array( 'success' => true, 'data' => array( 'started' => true ) ) );
+    header( 'Content-Type: application/json' );
+    header( 'Content-Length: ' . strlen( $resp ) );
+    header( 'Connection: close' );
+    echo $resp;
+    ob_flush();
+    flush();
+    if ( function_exists( 'fastcgi_finish_request' ) ) fastcgi_finish_request();
+
+    $result = bdopt_create_wp_backup( function( $i, $total, $file ) {
+        set_transient( 'bdopt_wp_backup_progress', array(
+            'status' => 'running',
+            'pct'    => min( 99, round( $i / $total * 100 ) ),
+            'file'   => $file,
+            'error'  => '',
+        ), HOUR_IN_SECONDS );
+    } );
+
+    if ( false === $result ) {
+        set_transient( 'bdopt_wp_backup_progress', array(
+            'status' => 'error', 'pct' => 0, 'file' => '', 'error' => 'wp-content backup failed — check disk space or ZipArchive.',
+        ), HOUR_IN_SECONDS );
+    } else {
+        set_transient( 'bdopt_wp_backup_progress', array(
+            'status' => 'done', 'pct' => 100, 'file' => $result['name'], 'error' => '',
+        ), HOUR_IN_SECONDS );
+    }
+});
+
+// ================================================================
+// AJAX: wp-content BACKUP STATUS
+// ================================================================
+add_action('wp_ajax_bdopt_wp_backup_status', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    $p = get_transient( 'bdopt_wp_backup_progress' );
+    if ( ! $p ) $p = array( 'status' => 'idle', 'pct' => 0, 'file' => '', 'error' => '' );
+    wp_send_json_success( $p );
+});
+
+// ================================================================
+// AJAX: wp-content BACKUP DELETE
+// ================================================================
+add_action('wp_ajax_bdopt_delete_wp_backup', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    $name = isset( $_POST['name'] ) ? basename( $_POST['name'] ) : '';
+    if ( empty( $name ) ) wp_die( 'Invalid name', 400 );
+
+    $ok = bdopt_delete_wp_backup( $name );
+    if ( ! $ok ) {
+        wp_send_json_error( array( 'message' => 'Could not delete backup.' ) );
+    }
+
+    wp_send_json_success( array(
+        'backups' => bdopt_get_wp_backups(),
+    ));
+});
+
+// ================================================================
+// AJAX: wp-content BACKUP LIST
+// ================================================================
+add_action('wp_ajax_bdopt_list_wp_backups', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    wp_send_json_success( array(
+        'backups' => bdopt_get_wp_backups(),
+    ));
+});
+
+// ================================================================
+// AJAX: wp-content BACKUP DOWNLOAD
+// ================================================================
+add_action('wp_ajax_bdopt_download_wp_backup', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    $name = isset( $_GET['file'] ) ? basename( $_GET['file'] ) : '';
+    if ( empty( $name ) ) wp_die( 'Invalid file', 400 );
+
+    $dir  = realpath( bdopt_wp_backup_dir() );
+    $path = realpath( $dir . DIRECTORY_SEPARATOR . $name );
+    if ( false === $path || strpos( $path, $dir . DIRECTORY_SEPARATOR ) !== 0 || ! file_exists( $path ) ) {
+        wp_die( 'File not found', 404 );
+    }
+
+    header( 'Content-Description: File Transfer' );
+    header( 'Content-Type: application/zip' );
+    header( 'Content-Disposition: attachment; filename="' . $name . '"' );
+    header( 'Content-Length: ' . filesize( $path ) );
+    header( 'Pragma: public' );
+    readfile( $path );
+    exit;
+});
+
+// ================================================================
 // AJAX: BACKUP LIST
 // ================================================================
 add_action('wp_ajax_bdopt_list_backups', function() {
@@ -1534,6 +1767,38 @@ function bdopt_render_page() {
     </div>
 
     <div class="box">
+        <div class="box-hd"><div class="box-hd-l"><span class="dashicons dashicons-portfolio"></span> wp-content Backup</div></div>
+        <div class="save-row" style="gap:12px">
+            <button class="button button-primary" type="button" id="btn-wp-backup" style="padding-left:20px;padding-right:20px;height:36px">
+                <span class="dashicons dashicons-portfolio"></span> Backup wp-content Now
+            </button>
+            <span style="font-size:12px;color:#646970">Stored in <code>wp-content/backups/</code> — large folders may take time</span>
+        </div>
+        <div id="wp-backup-list" style="padding:0 18px 14px">
+            <?php
+            $wp_backups = bdopt_get_wp_backups();
+            if ( empty( $wp_backups ) ) : ?>
+                <div style="padding:10px 0;font-size:12px;color:#8c8f94">No backups yet.</div>
+            <?php else : ?>
+                <table class="brk-tbl" style="font-size:12px">
+                    <thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th><th style="width:50px"></th></tr></thead>
+                    <tbody>
+                    <?php foreach ( $wp_backups as $b ) : ?>
+                        <tr>
+                            <td class="mono"><?php echo esc_html( $b['name'] ); ?></td>
+                            <td class="num-cell"><?php echo esc_html( size_format( $b['size'], 1 ) ); ?></td>
+                            <td class="num-cell"><?php echo esc_html( $b['date'] ); ?></td>
+                            <td class="num-cell"><button class="button button-small" type="button" data-dl-wp="<?php echo esc_attr( $b['name'] ); ?>" style="font-size:11px;padding-left:10px;padding-right:10px">Download</button></td>
+                            <td class="num-cell"><button class="button button-small" type="button" data-del-wp="<?php echo esc_attr( $b['name'] ); ?>" style="color:#d63638;border-color:#d63638;font-size:11px;padding-left:10px;padding-right:10px">Delete</button></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div class="box">
         <div class="box-hd"><div class="box-hd-l"><span class="dashicons dashicons-backup"></span> Database Backup</div></div>
         <div class="save-row" style="gap:12px">
             <button class="button button-primary" type="button" id="btn-backup" style="padding-left:20px;padding-right:20px;height:36px">
@@ -1555,8 +1820,8 @@ function bdopt_render_page() {
                             <td class="mono"><?php echo esc_html( $b['name'] ); ?></td>
                             <td class="num-cell"><?php echo esc_html( size_format( $b['size'], 1 ) ); ?></td>
                             <td class="num-cell"><?php echo esc_html( $b['date'] ); ?></td>
-                            <td class="num-cell"><button class="button button-small" type="button" data-dl="<?php echo esc_attr( $b['name'] ); ?>" style="font-size:11px">Download</button></td>
-                            <td class="num-cell"><button class="button button-small" type="button" data-backup="<?php echo esc_attr( $b['name'] ); ?>" style="color:#d63638;border-color:#d63638;font-size:11px">Delete</button></td>
+                            <td class="num-cell"><button class="button button-small" type="button" data-dl="<?php echo esc_attr( $b['name'] ); ?>" style="font-size:11px;padding-left:10px;padding-right:10px">Download</button></td>
+                            <td class="num-cell"><button class="button button-small" type="button" data-backup="<?php echo esc_attr( $b['name'] ); ?>" style="color:#d63638;border-color:#d63638;font-size:11px;padding-left:10px;padding-right:10px">Delete</button></td>
                         </tr>
                     <?php endforeach; ?>
                     </tbody>
@@ -2357,7 +2622,92 @@ document.getElementById('bdopt').addEventListener('click',function(e){
         function fmt(s){ if(s>=1073741824) return (s/1073741824).toFixed(2)+' GB'; if(s>=1048576) return (s/1048576).toFixed(1)+' MB'; if(s>=1024) return (s/1024).toFixed(0)+' KB'; return s+' B'; }
         var html='<table class="brk-tbl" style="font-size:12px"><thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th><th style="width:50px"></th></tr></thead><tbody>';
         backups.forEach(function(b){
-            html+='<tr><td class="mono">'+esc(b.name)+'</td><td class="num-cell">'+fmt(parseInt(b.size)||0)+'</td><td class="num-cell">'+esc(b.date)+'</td><td class="num-cell"><button class="button button-small" type="button" data-dl="'+esc(b.name)+'" style="font-size:11px">Download</button></td><td class="num-cell"><button class="button button-small" type="button" data-backup="'+esc(b.name)+'" style="color:#d63638;border-color:#d63638;font-size:11px">Delete</button></td></tr>';
+            html+='<tr><td class="mono">'+esc(b.name)+'</td><td class="num-cell">'+fmt(parseInt(b.size)||0)+'</td><td class="num-cell">'+esc(b.date)+'</td><td class="num-cell"><button class="button button-small" type="button" data-dl="'+esc(b.name)+'" style="font-size:11px;padding-left:10px;padding-right:10px">Download</button></td><td class="num-cell"><button class="button button-small" type="button" data-backup="'+esc(b.name)+'" style="color:#d63638;border-color:#d63638;font-size:11px;padding-left:10px;padding-right:10px">Delete</button></td></tr>';
+        });
+        el.innerHTML=html+'</tbody></table>';
+    }
+})();
+/* ─── wp-content BACKUP ─────────────────────────────────────── */
+(function(){
+    var btn=g('btn-wp-backup');
+    if(!btn) return;
+    btn.addEventListener('click',function(){
+        var orig=btn.innerHTML;
+        btn.disabled=true; btn.innerHTML='<span class="bsp"></span> Scanning wp-content...';
+        xpost({action:'bdopt_create_wp_backup',nonce:NONCE},
+        function(res){
+            if(res.success&&res.data.started){
+                btn.innerHTML='<span class="bsp"></span> Backing up <span id="wp-bp-progress">0%</span>';
+                pollWpBackup();
+            } else {
+                btn.disabled=false; btn.innerHTML=orig;
+                toast('\u2717 wp-content backup failed to start!',true);
+            }
+        },
+        function(){ btn.disabled=false; btn.innerHTML=orig; toast('Network Error!',true); });
+    });
+    function pollWpBackup(){
+        xpost({action:'bdopt_wp_backup_status',nonce:NONCE},
+        function(res){
+            if(!res.success){ btn.disabled=false; btn.innerHTML=orig; toast('Status check failed!',true); return; }
+            var p=res.data;
+            if(p.status==='running'){
+                var el=g('wp-bp-progress');
+                if(el) el.textContent=(p.pct||0)+'%';
+                setTimeout(pollWpBackup,2000);
+            } else if(p.status==='done'){
+                btn.disabled=false; btn.innerHTML=orig;
+                toast('\u2713 wp-content backup: '+p.file,false);
+                refreshWpBackups();
+            } else if(p.status==='error'){
+                btn.disabled=false; btn.innerHTML=orig;
+                toast('\u2717 '+(p.error||'wp-content backup failed!'),true);
+            } else {
+                btn.disabled=false; btn.innerHTML=orig;
+                refreshWpBackups();
+            }
+        },
+        function(){ btn.disabled=false; btn.innerHTML=orig; toast('Network Error!',true); });
+    }
+    function refreshWpBackups(){
+        xpost({action:'bdopt_list_wp_backups',nonce:NONCE},
+        function(res){
+            if(res.success) renderWpBackups(res.data.backups);
+        });
+    }
+    // Delete + Download delegation
+    document.getElementById('wp-backup-list').addEventListener('click',function(ev){
+        var dl=ev.target.closest('[data-dl-wp]');
+        if(dl&&!dl.disabled){
+            window.location.href=AJAX+'?action=bdopt_download_wp_backup&file='+encodeURIComponent(dl.dataset.dlWp)+'&nonce='+NONCE;
+            return;
+        }
+        var del=ev.target.closest('[data-del-wp]');
+        if(!del||del.disabled) return;
+        var name=del.dataset.delWp;
+        if(!confirm('Delete "'+name+'"? This cannot be undone.')) return;
+        var orig=del.innerHTML;
+        del.disabled=true; del.innerHTML='<span class="bsp bsp-d"></span>';
+        xpost({action:'bdopt_delete_wp_backup',nonce:NONCE,name:name},
+        function(res){
+            del.disabled=false; del.innerHTML=orig;
+            if(res.success){
+                toast('\u2713 Deleted.',false);
+                refreshWpBackups();
+            } else toast('\u2717 Delete failed!',true);
+        },
+        function(){ del.disabled=false; del.innerHTML=orig; toast('Network Error!',true); });
+    });
+    function renderWpBackups(backups){
+        var el=g('wp-backup-list');
+        if(!backups||!backups.length){
+            el.innerHTML='<div style="padding:10px 0;font-size:12px;color:#8c8f94">No backups yet.</div>';
+            return;
+        }
+        function fmt(s){ if(s>=1073741824) return (s/1073741824).toFixed(2)+' GB'; if(s>=1048576) return (s/1048576).toFixed(1)+' MB'; if(s>=1024) return (s/1024).toFixed(0)+' KB'; return s+' B'; }
+        var html='<table class="brk-tbl" style="font-size:12px"><thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th><th style="width:50px"></th></tr></thead><tbody>';
+        backups.forEach(function(b){
+            html+='<tr><td class="mono">'+esc(b.name)+'</td><td class="num-cell">'+fmt(parseInt(b.size)||0)+'</td><td class="num-cell">'+esc(b.date)+'</td><td class="num-cell"><button class="button button-small" type="button" data-dl-wp="'+esc(b.name)+'" style="font-size:11px;padding-left:10px;padding-right:10px">Download</button></td><td class="num-cell"><button class="button button-small" type="button" data-del-wp="'+esc(b.name)+'" style="color:#d63638;border-color:#d63638;font-size:11px;padding-left:10px;padding-right:10px">Delete</button></td></tr>';
         });
         el.innerHTML=html+'</tbody></table>';
     }

@@ -754,9 +754,13 @@ function bdopt_create_backup( $progress = null ) {
     $dir   = bdopt_backup_dir();
     $time  = current_time( 'Y-m-d-H-i-s' );
     $gz    = "backup-{$time}.sql.gz";
+    $tmp   = $dir . '/' . $gz . '.tmp';
     $gzpath = $dir . '/' . $gz;
 
-    $handle = gzopen( $gzpath, 'w9' );
+    // Clean stale tmp files
+    foreach ( glob( $dir . '/backup-*.sql.gz.tmp' ) as $stale ) { @unlink( $stale ); }
+
+    $handle = gzopen( $tmp, 'w9' );
     if ( ! $handle ) return false;
 
     set_time_limit( 0 );
@@ -773,7 +777,7 @@ function bdopt_create_backup( $progress = null ) {
     $tables = $wpdb->get_results( "SHOW TABLES", ARRAY_N );
     if ( empty( $tables ) ) {
         gzclose( $handle );
-        unlink( $gzpath );
+        @unlink( $tmp );
         return false;
     }
 
@@ -817,6 +821,8 @@ function bdopt_create_backup( $progress = null ) {
 
     $w( "\nSET FOREIGN_KEY_CHECKS=1;\n" );
     gzclose( $handle );
+
+    rename( $tmp, $gzpath );
 
     return array(
         'name' => $gz,
@@ -862,6 +868,10 @@ function bdopt_create_wp_backup( $progress = null ) {
     $time    = current_time( 'Y-m-d-H-i-s' );
     $zipname = "wp-backup-{$time}.zip";
     $zippath = $dir . '/' . $zipname;
+    $tmp     = $dir . '/' . $zipname . '.tmp';
+
+    // Clean stale tmp files
+    foreach ( glob( $dir . '/wp-backup-*.zip.tmp' ) as $stale ) { @unlink( $stale ); }
 
     set_time_limit( 0 );
     ignore_user_abort( true );
@@ -874,7 +884,7 @@ function bdopt_create_wp_backup( $progress = null ) {
 
     if ( class_exists( 'ZipArchive' ) ) {
         $zip = new ZipArchive();
-        if ( $zip->open( $zippath, ZipArchive::CREATE ) !== true ) return false;
+        if ( $zip->open( $tmp, ZipArchive::CREATE ) !== true ) return false;
 
         $files = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator( $source, RecursiveDirectoryIterator::SKIP_DOTS ),
@@ -895,7 +905,7 @@ function bdopt_create_wp_backup( $progress = null ) {
             $total++;
         }
 
-        if ( $total === 0 ) { $zip->close(); unlink( $zippath ); return false; }
+        if ( $total === 0 ) { $zip->close(); @unlink( $tmp ); return false; }
 
         $i = 0;
         foreach ( $list as $rp ) {
@@ -909,7 +919,6 @@ function bdopt_create_wp_backup( $progress = null ) {
         $zip->close();
 
     } elseif ( class_exists( 'PharData' ) ) {
-        // Filter iterator to exclude backup dirs
         $inner = new RecursiveIteratorIterator(
             new RecursiveDirectoryIterator( $source, FilesystemIterator::SKIP_DOTS ),
             RecursiveIteratorIterator::SELF_FIRST
@@ -925,20 +934,22 @@ function bdopt_create_wp_backup( $progress = null ) {
         } );
 
         try {
-            $phar = new PharData( $zippath );
+            $phar = new PharData( $tmp );
             $phar->buildFromIterator( $filtered, $source );
         } catch ( Exception $e ) {
-            @unlink( $zippath );
+            @unlink( $tmp );
             return false;
         }
     } else {
         return false;
     }
 
-    if ( ! file_exists( $zippath ) || filesize( $zippath ) == 0 ) {
-        @unlink( $zippath );
+    if ( ! file_exists( $tmp ) || filesize( $tmp ) == 0 ) {
+        @unlink( $tmp );
         return false;
     }
+
+    rename( $tmp, $zippath );
 
     return array(
         'name' => $zipname,

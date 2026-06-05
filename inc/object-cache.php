@@ -10,10 +10,6 @@ if ( ! defined( 'ABSPATH' ) ) exit;
  *   BDOPT_REDIS_DB    (default: 0)
  */
 
-if ( ! class_exists( 'Redis' ) ) {
-    wp_die( 'Redis PHP extension is required for object cache.', 'Redis Required' );
-}
-
 class WP_Object_Cache {
 
     private $redis;
@@ -34,15 +30,16 @@ class WP_Object_Cache {
         $site_url = parse_url( get_site_url(), PHP_URL_HOST );
         $this->prefix = $prefix . $site_url . ':';
 
-        $this->redis = new Redis();
-
-        try {
-            $this->connected = $this->redis->connect( $host, $port, 1.0 );
-            if ( $this->connected && $db > 0 ) {
-                $this->redis->select( $db );
+        if ( class_exists( 'Redis' ) ) {
+            $this->redis = new Redis();
+            try {
+                $this->connected = $this->redis->connect( $host, $port, 1.0 );
+                if ( $this->connected && $db > 0 ) {
+                    $this->redis->select( $db );
+                }
+            } catch ( Exception $e ) {
+                $this->connected = false;
             }
-        } catch ( Exception $e ) {
-            $this->connected = false;
         }
     }
 
@@ -136,7 +133,10 @@ class WP_Object_Cache {
         $this->cache = array();
         if ( $this->connected ) {
             try {
-                $this->redis->flushDb();
+                $keys = $this->redis->keys( $this->prefix . '*' );
+                if ( ! empty( $keys ) ) {
+                    $this->redis->del( $keys );
+                }
             } catch ( Exception $e ) {}
         }
         return true;

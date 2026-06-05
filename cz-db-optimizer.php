@@ -355,13 +355,25 @@ function bdopt_clean_actions( $days = 7 ) {
         $days, $days
     ) );
 
-    if ( $del > 0 && bdopt_table_exists( $lt ) ) {
-        $wpdb->query(
-            "DELETE l FROM `{$lt}` l
-             LEFT JOIN `{$t}` a ON l.action_id = a.action_id
-             WHERE a.action_id IS NULL
-             LIMIT 10000"
-        );
+    if ( $del > 0 ) {
+        // Clean orphaned logs
+        if ( bdopt_table_exists( $lt ) ) {
+            $wpdb->query(
+                "DELETE l FROM `{$lt}` l
+                 LEFT JOIN `{$t}` a ON l.action_id = a.action_id
+                 WHERE a.action_id IS NULL
+                 LIMIT 10000"
+            );
+        }
+        // Clean orphaned claims
+        $ct = $wpdb->prefix . 'actionscheduler_claims';
+        if ( bdopt_table_exists( $ct ) ) {
+            $wpdb->query(
+                "DELETE c FROM `{$ct}` c
+                 LEFT JOIN `{$t}` a ON c.claim_id = a.claim_id
+                 WHERE a.action_id IS NULL"
+            );
+        }
     }
     return $del;
 }
@@ -393,7 +405,10 @@ function bdopt_clean_revisions( $keep = 3 ) {
     global $wpdb;
     $keep    = max( 0, (int) $keep );
     $parents = $wpdb->get_col(
-        "SELECT post_parent FROM `{$wpdb->posts}` WHERE post_type = 'revision' GROUP BY post_parent HAVING COUNT(*) > $keep"
+        $wpdb->prepare(
+            "SELECT post_parent FROM `{$wpdb->posts}` WHERE post_type = 'revision' GROUP BY post_parent HAVING COUNT(*) > %d",
+            $keep
+        )
     );
     $del = 0;
     foreach ( $parents as $pid ) {
@@ -800,11 +815,12 @@ add_action('wp_ajax_bdopt_cache_action', function() {
             $config_file = ABSPATH . 'wp-config.php';
             if ( file_exists( $config_file ) && is_writable( $config_file ) ) {
                 $content = file_get_contents( $config_file );
-                if ( strpos( $content, 'WP_CACHE' ) === false ) {
-                    $insert = "define('WP_CACHE', true);\n";
-                    // Insert after opening <?php
-                    $content = preg_replace( '/^<\?php\s*/', '<?php ' . "\n" . $insert, $content );
-                    file_put_contents( $config_file, $content );
+                if ( preg_match( "/define\s*\(\s*'WP_CACHE'\s*,/i", $content ) === 0 ) {
+                    $insert = "define('WP_CACHE', true); // Added by CloudZex DB Optimizer\n";
+                    $content = preg_replace( '/^<\?php\s*/', "<?php\n" . $insert, $content, 1 );
+                    if ( $content !== null ) {
+                        file_put_contents( $config_file, $content );
+                    }
                 }
             }
             wp_send_json_success( array( 'message' => 'Object cache enabled! Reloading...' ) );
@@ -818,10 +834,18 @@ add_action('wp_ajax_bdopt_cache_action', function() {
                 $config_file = ABSPATH . 'wp-config.php';
                 if ( file_exists( $config_file ) && is_writable( $config_file ) ) {
                     $content = file_get_contents( $config_file );
-                    if ( strpos( $content, "define('WP_CACHE', true);" ) !== false ) {
-                        $content = str_replace( "define('WP_CACHE', true);\n", '', $content );
-                        $content = str_replace( "define('WP_CACHE', true);", '', $content );
-                        file_put_contents( $config_file, $content );
+                    $new_content = preg_replace(
+                        "/define\s*\(\s*'WP_CACHE'\s*,\s*true\s*\)\s*;\s*\/\/.*\n?/i",
+                        '',
+                        $content
+                    );
+                    $new_content = preg_replace(
+                        "/define\s*\(\s*'WP_CACHE'\s*,\s*true\s*\)\s*;\s*\n?/i",
+                        '',
+                        $new_content
+                    );
+                    if ( $new_content !== null && $new_content !== $content ) {
+                        file_put_contents( $config_file, $new_content );
                     }
                 }
                 wp_send_json_success( array( 'message' => 'Object cache disabled! Reloading...' ) );

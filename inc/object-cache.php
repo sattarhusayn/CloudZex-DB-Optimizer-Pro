@@ -1,4 +1,5 @@
 <?php
+if ( ! defined( 'ABSPATH' ) ) exit;
 /**
  * Redis-backed object cache drop-in for CloudZex DB Optimizer Pro.
  * Requires: PHP redis extension (phpredis).

@@ -359,7 +359,8 @@ function bdopt_clean_actions( $days = 7 ) {
         $wpdb->query(
             "DELETE l FROM `{$lt}` l
              LEFT JOIN `{$t}` a ON l.action_id = a.action_id
-             WHERE a.action_id IS NULL"
+             WHERE a.action_id IS NULL
+             LIMIT 10000"
         );
     }
     return $del;
@@ -392,7 +393,7 @@ function bdopt_clean_revisions( $keep = 3 ) {
     global $wpdb;
     $keep    = max( 0, (int) $keep );
     $parents = $wpdb->get_col(
-        "SELECT DISTINCT post_parent FROM `{$wpdb->posts}` WHERE post_type = 'revision'"
+        "SELECT post_parent FROM `{$wpdb->posts}` WHERE post_type = 'revision' GROUP BY post_parent HAVING COUNT(*) > $keep"
     );
     $del = 0;
     foreach ( $parents as $pid ) {
@@ -543,8 +544,8 @@ function bdopt_optimize_tables() {
     $n = 0;
     foreach ( $tables as $tbl ) {
         $name = $tbl->table_name;
-        $wpdb->query( "OPTIMIZE TABLE `{$name}`" );
-        $n++;
+        $res = $wpdb->query( "OPTIMIZE TABLE `{$name}`" );
+        if ( $res !== false ) $n++;
     }
     return $n;
 }

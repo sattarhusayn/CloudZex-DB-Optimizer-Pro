@@ -726,7 +726,7 @@ function bdopt_backup_dir() {
 
 function bdopt_get_backups() {
     $dir = bdopt_backup_dir();
-    $files = glob( $dir . '/backup-*.sql.gz' );
+    $files = glob( $dir . '/bd-backup-*.sql.gz' );
     if ( empty( $files ) ) return array();
     $backups = array();
     foreach ( $files as $f ) {
@@ -753,12 +753,12 @@ function bdopt_create_backup( $progress = null ) {
     global $wpdb;
     $dir   = bdopt_backup_dir();
     $time  = current_time( 'Y-m-d-H-i-s' );
-    $gz    = "backup-{$time}.sql.gz";
+    $gz    = "bd-backup-{$time}.sql.gz";
     $tmp   = $dir . '/' . $gz . '.tmp';
     $gzpath = $dir . '/' . $gz;
 
     // Clean stale tmp files
-    foreach ( glob( $dir . '/backup-*.sql.gz.tmp' ) as $stale ) { @unlink( $stale ); }
+    foreach ( glob( $dir . '/bd-backup-*.sql.gz.tmp' ) as $stale ) { @unlink( $stale ); }
 
     $handle = gzopen( $tmp, 'w9' );
     if ( ! $handle ) return false;

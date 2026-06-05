@@ -948,6 +948,26 @@ function bdopt_create_wp_backup( $progress = null ) {
 }
 
 // ================================================================
+// WP-CONTENT/CACHE FOLDER CLEANUP
+// ================================================================
+function bdopt_get_wp_cache_folder_info() {
+    $dir = WP_CONTENT_DIR . '/cache';
+    if ( ! is_dir( $dir ) ) {
+        return array( 'size' => 0, 'human' => '0 B', 'count' => 0 );
+    }
+    $size = 0;
+    $count = 0;
+    $it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $dir, RecursiveDirectoryIterator::SKIP_DOTS ) );
+    foreach ( $it as $f ) {
+        if ( $f->isFile() ) {
+            $size += $f->getSize();
+            $count++;
+        }
+    }
+    return array( 'size' => $size, 'human' => size_format( $size, 1 ), 'count' => $count );
+}
+
+// ================================================================
 // ADMIN MENU
 // ================================================================
 add_action('admin_menu', function() {
@@ -1186,6 +1206,36 @@ add_action('wp_ajax_bdopt_purge_cache', function() {
     } else {
         wp_send_json_error( array( 'message' => $label . ' purge function not found.' ) );
     }
+});
+
+// ================================================================
+// AJAX: PURGE WP-CONTENT/CACHE FOLDER
+// ================================================================
+add_action('wp_ajax_bdopt_purge_wp_cache', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    $dir = WP_CONTENT_DIR . '/cache';
+    if ( ! is_dir( $dir ) ) {
+        wp_send_json_error( array( 'message' => 'wp-content/cache/ folder not found.' ) );
+        return;
+    }
+
+    $count = 0;
+    $it = new RecursiveIteratorIterator(
+        new RecursiveDirectoryIterator( $dir, RecursiveDirectoryIterator::SKIP_DOTS ),
+        RecursiveIteratorIterator::CHILD_FIRST
+    );
+    foreach ( $it as $f ) {
+        if ( $f->isFile() || $f->isLink() ) {
+            @unlink( $f->getPathname() );
+            $count++;
+        } elseif ( $f->isDir() ) {
+            @rmdir( $f->getPathname() );
+        }
+    }
+
+    wp_send_json_success( array( 'message' => "wp-content/cache/ purged! ($count items removed)" ) );
 });
 
 // ================================================================
@@ -1759,7 +1809,19 @@ function bdopt_render_page() {
             if ( ! $found ) {
                 echo '<div class="card"><div class="card-body" style="padding:20px;text-align:center;color:#8c8f94;font-size:12px">No supported cache plugin detected.</div></div>';
             }
+            $cf = bdopt_get_wp_cache_folder_info();
             ?>
+            <div class="card">
+                <div class="card-hd"><div class="card-ico"><span class="dashicons dashicons-folder-open"></span></div><div class="card-ttl">wp-content/cache/</div></div>
+                <div class="card-body">
+                    <div style="font-size:12px;color:#646970;margin-bottom:13px;line-height:1.5">
+                        <strong><?php echo esc_html( $cf['human'] ); ?></strong> &middot; <?php echo esc_html( $cf['count'] ); ?> files
+                    </div>
+                    <button class="card-btn" type="button" data-wp-cache="1" style="--cc:#2271b1;--bg:#f0f6fc"<?php echo $cf['count'] === 0 ? ' disabled' : ''; ?>>
+                        <span class="dashicons dashicons-trash"></span> Purge Folder
+                    </button>
+                </div>
+            </div>
         </div>
     </div>
 
@@ -2534,6 +2596,21 @@ document.getElementById('bdopt').addEventListener('click',function(e){
         function(res){
             el.disabled=false; el.innerHTML=orig;
             if(res.success) toast('\u2713 '+res.data.message,false);
+            else toast('\u2717 '+res.data.message,true);
+        },
+        function(){ el.disabled=false; el.innerHTML=orig; toast('Network Error!',true); }
+    );
+});
+/* --- WP-CONTENT/CACHE PURGE --- */
+document.getElementById('bdopt').addEventListener('click',function(e){
+    var el=e.target.closest('[data-wp-cache]');
+    if(!el||el.disabled) return;
+    var orig=el.innerHTML;
+    el.disabled=true; el.innerHTML='<span class="bsp bsp-d"></span> Purging...';
+    xpost({action:'bdopt_purge_wp_cache',nonce:NONCE},
+        function(res){
+            el.disabled=false; el.innerHTML=orig;
+            if(res.success){ toast('\u2713 '+res.data.message,false); location.reload(); }
             else toast('\u2717 '+res.data.message,true);
         },
         function(){ el.disabled=false; el.innerHTML=orig; toast('Network Error!',true); }

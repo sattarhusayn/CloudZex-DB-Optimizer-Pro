@@ -1668,6 +1668,9 @@ function bdopt_render_page() {
     <button class="tab" type="button" data-panel="p-cache" role="tab" aria-selected="false">
         <span class="dashicons dashicons-database"></span> Object Cache
     </button>
+    <button class="tab" type="button" data-panel="p-backup" role="tab" aria-selected="false">
+        <span class="dashicons dashicons-backup"></span> Backup
+    </button>
     <button class="tab" type="button" data-panel="p-settings" role="tab" aria-selected="false">
         <span class="dashicons dashicons-admin-settings"></span> Settings
     </button>
@@ -1763,70 +1766,6 @@ function bdopt_render_page() {
                 echo '<div class="card"><div class="card-body" style="padding:20px;text-align:center;color:#8c8f94;font-size:12px">No supported cache plugin detected.</div></div>';
             }
             ?>
-        </div>
-    </div>
-
-    <div class="box">
-        <div class="box-hd"><div class="box-hd-l"><span class="dashicons dashicons-portfolio"></span> wp-content Backup</div></div>
-        <div class="save-row" style="gap:12px">
-            <button class="button button-primary" type="button" id="btn-wp-backup" style="padding-left:20px;padding-right:20px;height:36px">
-                <span class="dashicons dashicons-portfolio"></span> Backup wp-content Now
-            </button>
-            <span style="font-size:12px;color:#646970">Stored in <code>wp-content/backups/</code> — large folders may take time</span>
-        </div>
-        <div id="wp-backup-list" style="padding:0 18px 14px">
-            <?php
-            $wp_backups = bdopt_get_wp_backups();
-            if ( empty( $wp_backups ) ) : ?>
-                <div style="padding:10px 0;font-size:12px;color:#8c8f94">No backups yet.</div>
-            <?php else : ?>
-                <table class="brk-tbl" style="font-size:12px">
-                    <thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th><th style="width:50px"></th></tr></thead>
-                    <tbody>
-                    <?php foreach ( $wp_backups as $b ) : ?>
-                        <tr>
-                            <td class="mono"><?php echo esc_html( $b['name'] ); ?></td>
-                            <td class="num-cell"><?php echo esc_html( size_format( $b['size'], 1 ) ); ?></td>
-                            <td class="num-cell"><?php echo esc_html( $b['date'] ); ?></td>
-                            <td class="num-cell"><button class="button button-small" type="button" data-dl-wp="<?php echo esc_attr( $b['name'] ); ?>" style="font-size:11px;padding-left:10px;padding-right:10px">Download</button></td>
-                            <td class="num-cell"><button class="button button-small" type="button" data-del-wp="<?php echo esc_attr( $b['name'] ); ?>" style="color:#d63638;border-color:#d63638;font-size:11px;padding-left:10px;padding-right:10px">Delete</button></td>
-                        </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php endif; ?>
-        </div>
-    </div>
-
-    <div class="box">
-        <div class="box-hd"><div class="box-hd-l"><span class="dashicons dashicons-backup"></span> Database Backup</div></div>
-        <div class="save-row" style="gap:12px">
-            <button class="button button-primary" type="button" id="btn-backup" style="padding-left:20px;padding-right:20px;height:36px">
-                <span class="dashicons dashicons-backup"></span> Create Backup Now
-            </button>
-            <span style="font-size:12px;color:#646970">Stored in <code>wp-content/db-backups/</code> — large DBs may take a few minutes</span>
-        </div>
-        <div id="backup-list" style="padding:0 18px 14px">
-            <?php
-            $backups = bdopt_get_backups();
-            if ( empty( $backups ) ) : ?>
-                <div style="padding:10px 0;font-size:12px;color:#8c8f94">No backups yet.</div>
-            <?php else : ?>
-                <table class="brk-tbl" style="font-size:12px">
-                    <thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th><th style="width:50px"></th></tr></thead>
-                    <tbody>
-                    <?php foreach ( $backups as $b ) : ?>
-                        <tr>
-                            <td class="mono"><?php echo esc_html( $b['name'] ); ?></td>
-                            <td class="num-cell"><?php echo esc_html( size_format( $b['size'], 1 ) ); ?></td>
-                            <td class="num-cell"><?php echo esc_html( $b['date'] ); ?></td>
-                            <td class="num-cell"><button class="button button-small" type="button" data-dl="<?php echo esc_attr( $b['name'] ); ?>" style="font-size:11px;padding-left:10px;padding-right:10px">Download</button></td>
-                            <td class="num-cell"><button class="button button-small" type="button" data-backup="<?php echo esc_attr( $b['name'] ); ?>" style="color:#d63638;border-color:#d63638;font-size:11px;padding-left:10px;padding-right:10px">Delete</button></td>
-                        </tr>
-                    <?php endforeach; ?>
-                    </tbody>
-                </table>
-            <?php endif; ?>
         </div>
     </div>
 
@@ -2125,6 +2064,73 @@ function bdopt_render_page() {
         </div>
     </div>
 </div><!-- /p-cache -->
+
+<!-- ═══ PANEL: BACKUP ════════════════════════════════════════ -->
+<div id="p-backup" class="panel" role="tabpanel">
+    <div class="box">
+        <div class="box-hd"><div class="box-hd-l"><span class="dashicons dashicons-backup"></span> Database Backup</div></div>
+        <div class="save-row" style="gap:12px">
+            <button class="button button-primary" type="button" id="btn-backup" style="padding-left:20px;padding-right:20px;height:36px">
+                <span class="dashicons dashicons-backup"></span> Create Backup Now
+            </button>
+            <span style="font-size:12px;color:#646970">Stored in <code>wp-content/db-backups/</code> — large DBs may take a few minutes</span>
+        </div>
+        <div id="backup-list" style="padding:0 18px 14px">
+            <?php
+            $backups = bdopt_get_backups();
+            if ( empty( $backups ) ) : ?>
+                <div style="padding:10px 0;font-size:12px;color:#8c8f94">No backups yet.</div>
+            <?php else : ?>
+                <table class="brk-tbl" style="font-size:12px">
+                    <thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th><th style="width:50px"></th></tr></thead>
+                    <tbody>
+                    <?php foreach ( $backups as $b ) : ?>
+                        <tr>
+                            <td class="mono"><?php echo esc_html( $b['name'] ); ?></td>
+                            <td class="num-cell"><?php echo esc_html( size_format( $b['size'], 1 ) ); ?></td>
+                            <td class="num-cell"><?php echo esc_html( $b['date'] ); ?></td>
+                            <td class="num-cell"><button class="button button-small" type="button" data-dl="<?php echo esc_attr( $b['name'] ); ?>" style="font-size:11px;padding-left:10px;padding-right:10px">Download</button></td>
+                            <td class="num-cell"><button class="button button-small" type="button" data-backup="<?php echo esc_attr( $b['name'] ); ?>" style="color:#d63638;border-color:#d63638;font-size:11px;padding-left:10px;padding-right:10px">Delete</button></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </div>
+    </div>
+
+    <div class="box">
+        <div class="box-hd"><div class="box-hd-l"><span class="dashicons dashicons-portfolio"></span> wp-content Backup</div></div>
+        <div class="save-row" style="gap:12px">
+            <button class="button button-primary" type="button" id="btn-wp-backup" style="padding-left:20px;padding-right:20px;height:36px">
+                <span class="dashicons dashicons-portfolio"></span> Backup wp-content Now
+            </button>
+            <span style="font-size:12px;color:#646970">Stored in <code>wp-content/backups/</code> — large folders may take time</span>
+        </div>
+        <div id="wp-backup-list" style="padding:0 18px 14px">
+            <?php
+            $wp_backups = bdopt_get_wp_backups();
+            if ( empty( $wp_backups ) ) : ?>
+                <div style="padding:10px 0;font-size:12px;color:#8c8f94">No backups yet.</div>
+            <?php else : ?>
+                <table class="brk-tbl" style="font-size:12px">
+                    <thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th><th style="width:50px"></th></tr></thead>
+                    <tbody>
+                    <?php foreach ( $wp_backups as $b ) : ?>
+                        <tr>
+                            <td class="mono"><?php echo esc_html( $b['name'] ); ?></td>
+                            <td class="num-cell"><?php echo esc_html( size_format( $b['size'], 1 ) ); ?></td>
+                            <td class="num-cell"><?php echo esc_html( $b['date'] ); ?></td>
+                            <td class="num-cell"><button class="button button-small" type="button" data-dl-wp="<?php echo esc_attr( $b['name'] ); ?>" style="font-size:11px;padding-left:10px;padding-right:10px">Download</button></td>
+                            <td class="num-cell"><button class="button button-small" type="button" data-del-wp="<?php echo esc_attr( $b['name'] ); ?>" style="color:#d63638;border-color:#d63638;font-size:11px;padding-left:10px;padding-right:10px">Delete</button></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
+        </div>
+    </div>
+</div><!-- /p-backup -->
 
 <!-- ═══ PANEL: SETTINGS ════════════════════════════════════════ -->
 <div id="p-settings" class="panel" role="tabpanel">

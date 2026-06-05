@@ -715,7 +715,7 @@ function bdopt_get_counts() {
 // DATABASE BACKUP
 // ================================================================
 function bdopt_backup_dir() {
-    $dir = WP_CONTENT_DIR . '/db-backups';
+    $dir = WP_CONTENT_DIR . '/cz-backups';
     if ( ! is_dir( $dir ) ) {
         mkdir( $dir, 0755, true );
         file_put_contents( $dir . '/.htaccess', "Deny from all\nRequire all denied\n" );
@@ -829,13 +829,7 @@ function bdopt_create_backup( $progress = null ) {
 // wp-content BACKUP
 // ================================================================
 function bdopt_wp_backup_dir() {
-    $dir = WP_CONTENT_DIR . '/backups';
-    if ( ! is_dir( $dir ) ) {
-        mkdir( $dir, 0755, true );
-        file_put_contents( $dir . '/.htaccess', "Deny from all\nRequire all denied\n" );
-        file_put_contents( $dir . '/index.php', "<?php // Silence\n" );
-    }
-    return $dir;
+    return bdopt_backup_dir();
 }
 
 function bdopt_get_wp_backups() {
@@ -2073,7 +2067,7 @@ function bdopt_render_page() {
             <button class="button button-primary" type="button" id="btn-backup" style="padding-left:20px;padding-right:20px;height:36px">
                 <span class="dashicons dashicons-backup"></span> Create Backup Now
             </button>
-            <span style="font-size:12px;color:#646970">Stored in <code>wp-content/db-backups/</code> — large DBs may take a few minutes</span>
+            <span style="font-size:12px;color:#646970">Stored in <code>wp-content/cz-backups/</code> — large DBs may take a few minutes</span>
         </div>
         <div id="backup-list" style="padding:0 18px 14px">
             <?php
@@ -2105,7 +2099,7 @@ function bdopt_render_page() {
             <button class="button button-primary" type="button" id="btn-wp-backup" style="padding-left:20px;padding-right:20px;height:36px">
                 <span class="dashicons dashicons-portfolio"></span> Backup wp-content Now
             </button>
-            <span style="font-size:12px;color:#646970">Stored in <code>wp-content/backups/</code> — large folders may take time</span>
+            <span style="font-size:12px;color:#646970">Stored in <code>wp-content/cz-backups/</code> — large folders may take time</span>
         </div>
         <div id="wp-backup-list" style="padding:0 18px 14px">
             <?php

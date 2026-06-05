@@ -1193,6 +1193,31 @@ add_action('wp_ajax_bdopt_delete_backup', function() {
 });
 
 // ================================================================
+// AJAX: BACKUP DOWNLOAD
+// ================================================================
+add_action('wp_ajax_bdopt_download_backup', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    $name = isset( $_GET['file'] ) ? basename( $_GET['file'] ) : '';
+    if ( empty( $name ) ) wp_die( 'Invalid file', 400 );
+
+    $dir  = realpath( bdopt_backup_dir() );
+    $path = realpath( $dir . DIRECTORY_SEPARATOR . $name );
+    if ( false === $path || strpos( $path, $dir . DIRECTORY_SEPARATOR ) !== 0 || ! file_exists( $path ) ) {
+        wp_die( 'File not found', 404 );
+    }
+
+    header( 'Content-Description: File Transfer' );
+    header( 'Content-Type: application/gzip' );
+    header( 'Content-Disposition: attachment; filename="' . $name . '"' );
+    header( 'Content-Length: ' . filesize( $path ) );
+    header( 'Pragma: public' );
+    readfile( $path );
+    exit;
+});
+
+// ================================================================
 // AJAX: BACKUP LIST
 // ================================================================
 add_action('wp_ajax_bdopt_list_backups', function() {
@@ -1523,13 +1548,14 @@ function bdopt_render_page() {
                 <div style="padding:10px 0;font-size:12px;color:#8c8f94">No backups yet.</div>
             <?php else : ?>
                 <table class="brk-tbl" style="font-size:12px">
-                    <thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th></tr></thead>
+                    <thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th><th style="width:50px"></th></tr></thead>
                     <tbody>
                     <?php foreach ( $backups as $b ) : ?>
                         <tr>
                             <td class="mono"><?php echo esc_html( $b['name'] ); ?></td>
                             <td class="num-cell"><?php echo esc_html( size_format( $b['size'], 1 ) ); ?></td>
                             <td class="num-cell"><?php echo esc_html( $b['date'] ); ?></td>
+                            <td class="num-cell"><button class="button button-small" type="button" data-dl="<?php echo esc_attr( $b['name'] ); ?>" style="font-size:11px">Download</button></td>
                             <td class="num-cell"><button class="button button-small" type="button" data-backup="<?php echo esc_attr( $b['name'] ); ?>" style="color:#d63638;border-color:#d63638;font-size:11px">Delete</button></td>
                         </tr>
                     <?php endforeach; ?>
@@ -2298,8 +2324,14 @@ document.getElementById('bdopt').addEventListener('click',function(e){
             if(res.success) renderBackups(res.data.backups);
         });
     }
-    // Delete backup
+    // Delete + Download backup
     document.getElementById('backup-list').addEventListener('click',function(ev){
+        var dl=ev.target.closest('[data-dl]');
+        if(dl&&!dl.disabled){
+            var name=dl.dataset.dl;
+            window.location.href=AJAX+'?action=bdopt_download_backup&file='+encodeURIComponent(name)+'&nonce='+NONCE;
+            return;
+        }
         var del=ev.target.closest('[data-backup]');
         if(!del||del.disabled) return;
         var name=del.dataset.backup;
@@ -2323,9 +2355,9 @@ document.getElementById('bdopt').addEventListener('click',function(e){
             return;
         }
         function fmt(s){ if(s>=1073741824) return (s/1073741824).toFixed(2)+' GB'; if(s>=1048576) return (s/1048576).toFixed(1)+' MB'; if(s>=1024) return (s/1024).toFixed(0)+' KB'; return s+' B'; }
-        var html='<table class="brk-tbl" style="font-size:12px"><thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th></tr></thead><tbody>';
+        var html='<table class="brk-tbl" style="font-size:12px"><thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th><th style="width:50px"></th></tr></thead><tbody>';
         backups.forEach(function(b){
-            html+='<tr><td class="mono">'+esc(b.name)+'</td><td class="num-cell">'+fmt(parseInt(b.size)||0)+'</td><td class="num-cell">'+esc(b.date)+'</td><td class="num-cell"><button class="button button-small" type="button" data-backup="'+esc(b.name)+'" style="color:#d63638;border-color:#d63638;font-size:11px">Delete</button></td></tr>';
+            html+='<tr><td class="mono">'+esc(b.name)+'</td><td class="num-cell">'+fmt(parseInt(b.size)||0)+'</td><td class="num-cell">'+esc(b.date)+'</td><td class="num-cell"><button class="button button-small" type="button" data-dl="'+esc(b.name)+'" style="font-size:11px">Download</button></td><td class="num-cell"><button class="button button-small" type="button" data-backup="'+esc(b.name)+'" style="color:#d63638;border-color:#d63638;font-size:11px">Delete</button></td></tr>';
         });
         el.innerHTML=html+'</tbody></table>';
     }

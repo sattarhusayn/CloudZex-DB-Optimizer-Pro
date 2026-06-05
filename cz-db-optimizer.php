@@ -42,6 +42,7 @@ function bdopt_defaults() {
         'perf_pingbacks'    => 0,
         'perf_qs'           => 0,
         'perf_oembed'       => 0,
+        'backup_before_optimize' => 0,
     );
 }
 
@@ -711,6 +712,113 @@ function bdopt_get_counts() {
 }
 
 // ================================================================
+// DATABASE BACKUP
+// ================================================================
+function bdopt_backup_dir() {
+    $dir = WP_CONTENT_DIR . '/db-backups';
+    if ( ! is_dir( $dir ) ) {
+        mkdir( $dir, 0755, true );
+        file_put_contents( $dir . '/.htaccess', "Deny from all\nRequire all denied\n" );
+        file_put_contents( $dir . '/index.php', "<?php // Silence\n" );
+    }
+    return $dir;
+}
+
+function bdopt_get_backups() {
+    $dir = bdopt_backup_dir();
+    $files = glob( $dir . '/backup-*.sql.gz' );
+    if ( empty( $files ) ) return array();
+    $backups = array();
+    foreach ( $files as $f ) {
+        $backups[] = array(
+            'name' => basename( $f ),
+            'size' => filesize( $f ),
+            'date' => date( 'Y-m-d H:i:s', filemtime( $f ) ),
+        );
+    }
+    usort( $backups, function( $a, $b ) {
+        return strcmp( $b['name'], $a['name'] );
+    } );
+    return $backups;
+}
+
+function bdopt_delete_backup( $name ) {
+    $dir = bdopt_backup_dir();
+    $path = $dir . '/' . basename( $name );
+    if ( strpos( realpath( $path ), realpath( $dir ) ) !== 0 ) return false;
+    if ( ! file_exists( $path ) ) return false;
+    return unlink( $path );
+}
+
+function bdopt_create_backup() {
+    global $wpdb;
+    $dir   = bdopt_backup_dir();
+    $time  = current_time( 'Y-m-d-H-i-s' );
+    $gz    = "backup-{$time}.sql.gz";
+    $gzpath = $dir . '/' . $gz;
+
+    $handle = gzopen( $gzpath, 'w9' );
+    if ( ! $handle ) return false;
+
+    set_time_limit( 0 );
+
+    $w = function( $s ) use ( $handle ) { gzwrite( $handle, $s ); };
+
+    $w( "-- CloudZex DB Optimizer Backup\n" );
+    $w( "-- Date: " . current_time( 'mysql' ) . "\n" );
+    $w( "-- Host: " . DB_HOST . "\n" );
+    $w( "-- Database: " . DB_NAME . "\n\n" );
+    $w( "SET FOREIGN_KEY_CHECKS=0;\nSET SQL_MODE='NO_AUTO_VALUE_ON_ZERO';\n\n" );
+
+    $tables = $wpdb->get_results( "SHOW TABLES", ARRAY_N );
+    if ( empty( $tables ) ) {
+        gzclose( $handle );
+        unlink( $gzpath );
+        return false;
+    }
+
+    foreach ( $tables as $tbl ) {
+        $name = $tbl[0];
+
+        $create = $wpdb->get_row( "SHOW CREATE TABLE `{$name}`", ARRAY_N );
+        if ( ! $create || empty( $create[1] ) ) continue;
+
+        $w( "\n--\n-- Table: {$name}\n--\n" );
+        $w( "DROP TABLE IF EXISTS `{$name}`;\n" );
+        $w( $create[1] . ";\n\n" );
+
+        $cnt = (int) $wpdb->get_var( "SELECT COUNT(*) FROM `{$name}`" );
+        if ( $cnt === 0 ) continue;
+
+        $offset = 0;
+        $chunk  = 500;
+        while ( $offset < $cnt ) {
+            $rows = $wpdb->get_results( "SELECT * FROM `{$name}` LIMIT {$offset}, {$chunk}", ARRAY_N );
+            if ( empty( $rows ) ) break;
+
+            foreach ( $rows as $row ) {
+                $vals = array();
+                foreach ( $row as $v ) {
+                    $vals[] = ( $v === null ) ? 'NULL' : "'" . esc_sql( (string) $v ) . "'";
+                }
+                $w( "INSERT INTO `{$name}` VALUES (" . implode( ',', $vals ) . ");\n" );
+            }
+            $offset += $chunk;
+        }
+        $w( "\n" );
+    }
+
+    $w( "\nSET FOREIGN_KEY_CHECKS=1;\n" );
+    gzclose( $handle );
+
+    return array(
+        'name' => $gz,
+        'size' => filesize( $gzpath ),
+        'date' => date( 'Y-m-d H:i:s', filemtime( $gzpath ) ),
+    );
+}
+
+// ================================================================
 // ADMIN MENU
 // ================================================================
 add_action('admin_menu', function() {
@@ -754,7 +862,12 @@ add_action('wp_ajax_bdopt_run_clean', function() {
             $mIdTo    = isset( $_POST['order_id_to'] ) ? (int) $_POST['order_id_to'] : 0;
             $count = bdopt_clean_orders( $mDays, $mStatuses, $mFrom, $mTo, $mIdFrom, $mIdTo );
             break;
-        case 'optimize':    $count = bdopt_optimize_tables(); break;
+        case 'optimize':
+            if ( (int) bdopt_s( 'backup_before_optimize', 0 ) ) {
+                bdopt_create_backup();
+            }
+            $count = bdopt_optimize_tables();
+            break;
         case 'all':
             $inc_draft   = ! empty( $_POST['include_draft'] );
             $inc_trashed = ! empty( $_POST['include_trashed'] );
@@ -959,7 +1072,8 @@ add_action('wp_ajax_bdopt_save_settings', function() {
     $bools = array('auto_enabled','clean_sessions','clean_transients','clean_actions','clean_logs',
                    'clean_revisions','clean_autodraft','clean_spam','clean_trashed','clean_orphan_meta',
                    'clean_orders','optimize_tables',
-                   'perf_heartbeat','perf_xmlrpc','perf_pingbacks','perf_qs','perf_oembed');
+                   'perf_heartbeat','perf_xmlrpc','perf_pingbacks','perf_qs','perf_oembed',
+                   'backup_before_optimize');
     $s = array(
         'auto_frequency' => $freq,
         'order_days'     => max(1, (int)(isset($_POST['order_days'])    ? $_POST['order_days']    : 30)),
@@ -985,6 +1099,56 @@ add_action('wp_ajax_bdopt_get_breakdown', function() {
     if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
     wp_send_json_success(array(
         'tables' => bdopt_get_db_breakdown(),
+    ));
+});
+
+// ================================================================
+// AJAX: BACKUP CREATE
+// ================================================================
+add_action('wp_ajax_bdopt_create_backup', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    $result = bdopt_create_backup();
+    if ( false === $result ) {
+        wp_send_json_error( array( 'message' => 'Backup failed — check disk space or permissions.' ) );
+    }
+
+    wp_send_json_success( array(
+        'backup'  => $result,
+        'backups' => bdopt_get_backups(),
+    ));
+});
+
+// ================================================================
+// AJAX: BACKUP DELETE
+// ================================================================
+add_action('wp_ajax_bdopt_delete_backup', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    $name = isset( $_POST['name'] ) ? sanitize_file_name( $_POST['name'] ) : '';
+    if ( empty( $name ) ) wp_die( 'Invalid name', 400 );
+
+    $ok = bdopt_delete_backup( $name );
+    if ( ! $ok ) {
+        wp_send_json_error( array( 'message' => 'Could not delete backup.' ) );
+    }
+
+    wp_send_json_success( array(
+        'backups' => bdopt_get_backups(),
+    ));
+});
+
+// ================================================================
+// AJAX: BACKUP LIST
+// ================================================================
+add_action('wp_ajax_bdopt_list_backups', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    wp_send_json_success( array(
+        'backups' => bdopt_get_backups(),
     ));
 });
 
@@ -1289,6 +1453,37 @@ function bdopt_render_page() {
                 echo '<div class="card"><div class="card-body" style="padding:20px;text-align:center;color:#8c8f94;font-size:12px">No supported cache plugin detected.</div></div>';
             }
             ?>
+        </div>
+    </div>
+
+    <div class="box">
+        <div class="box-hd"><div class="box-hd-l"><span class="dashicons dashicons-backup"></span> Database Backup</div></div>
+        <div class="save-row" style="gap:12px">
+            <button class="button button-primary" type="button" id="btn-backup" style="padding-left:20px;padding-right:20px;height:36px">
+                <span class="dashicons dashicons-backup"></span> Create Backup Now
+            </button>
+            <span style="font-size:12px;color:#646970">Backups stored in <code>wp-content/db-backups/</code></span>
+        </div>
+        <div id="backup-list" style="padding:0 18px 14px">
+            <?php
+            $backups = bdopt_get_backups();
+            if ( empty( $backups ) ) : ?>
+                <div style="padding:10px 0;font-size:12px;color:#8c8f94">No backups yet.</div>
+            <?php else : ?>
+                <table class="brk-tbl" style="font-size:12px">
+                    <thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th></tr></thead>
+                    <tbody>
+                    <?php foreach ( $backups as $b ) : ?>
+                        <tr>
+                            <td class="mono"><?php echo esc_html( $b['name'] ); ?></td>
+                            <td class="num-cell"><?php echo esc_html( size_format( $b['size'], 1 ) ); ?></td>
+                            <td class="num-cell"><?php echo esc_html( $b['date'] ); ?></td>
+                            <td class="num-cell"><button class="button button-small" type="button" data-backup="<?php echo esc_attr( $b['name'] ); ?>" style="color:#d63638;border-color:#d63638;font-size:11px">Delete</button></td>
+                        </tr>
+                    <?php endforeach; ?>
+                    </tbody>
+                </table>
+            <?php endif; ?>
         </div>
     </div>
 
@@ -1786,6 +1981,7 @@ g('btn-save').addEventListener('click',function(){
         clean_trashed:    g('s-trashed').checked?1:0,
         clean_orphan_meta:g('s-orphan').checked?1:0,
         optimize_tables:  g('s-optimize').checked?1:0,
+        backup_before_optimize: g('s-backup-before').checked?1:0,
         action_days:      g('s-action-days').value,
         log_days:         g('s-log-days').value,
         revision_keep:    g('s-rev-keep').value,
@@ -2000,6 +2196,54 @@ document.getElementById('bdopt').addEventListener('click',function(e){
         function(){ el.disabled=false; el.innerHTML=orig; toast('Network Error!',true); }
     );
 });
+/* ─── BACKUP ─────────────────────────────────────────────── */
+(function(){
+    var btn=g('btn-backup');
+    if(!btn) return;
+    btn.addEventListener('click',function(){
+        var orig=btn.innerHTML;
+        btn.disabled=true; btn.innerHTML='<span class="bsp"></span> Backing up...';
+        xpost({action:'bdopt_create_backup',nonce:NONCE},
+        function(res){
+            btn.disabled=false; btn.innerHTML=orig;
+            if(res.success) {
+                toast('\u2713 Backup created: '+res.data.backup.name,false);
+                renderBackups(res.data.backups);
+            } else toast('\u2717 Backup failed!',true);
+        },
+        function(){ btn.disabled=false; btn.innerHTML=orig; toast('Network Error!',true); });
+    });
+    // Delete backup
+    document.getElementById('backup-list').addEventListener('click',function(ev){
+        var del=ev.target.closest('[data-backup]');
+        if(!del||del.disabled) return;
+        var name=del.dataset.backup;
+        if(!confirm('Delete backup "'+name+'"? This cannot be undone.')) return;
+        var orig=del.innerHTML;
+        del.disabled=true; del.innerHTML='<span class="bsp bsp-d"></span>';
+        xpost({action:'bdopt_delete_backup',nonce:NONCE,name:name},
+        function(res){
+            if(res.success){
+                toast('\u2713 Backup deleted.',false);
+                renderBackups(res.data.backups);
+            } else toast('\u2717 Delete failed!',true);
+        },
+        function(){ del.disabled=false; del.innerHTML=orig; toast('Network Error!',true); });
+    });
+    function renderBackups(backups){
+        var el=g('backup-list');
+        if(!backups||!backups.length){
+            el.innerHTML='<div style="padding:10px 0;font-size:12px;color:#8c8f94">No backups yet.</div>';
+            return;
+        }
+        function fmt(s){ if(s>=1073741824) return (s/1073741824).toFixed(2)+' GB'; if(s>=1048576) return (s/1048576).toFixed(1)+' MB'; if(s>=1024) return (s/1024).toFixed(0)+' KB'; return s+' B'; }
+        var html='<table class="brk-tbl" style="font-size:12px"><thead><tr><th>File</th><th style="text-align:right">Size</th><th style="text-align:right">Date</th><th style="width:50px"></th></tr></thead><tbody>';
+        backups.forEach(function(b){
+            html+='<tr><td class="mono">'+esc(b.name)+'</td><td class="num-cell">'+fmt(parseInt(b.size)||0)+'</td><td class="num-cell">'+esc(b.date)+'</td><td class="num-cell"><button class="button button-small" type="button" data-backup="'+esc(b.name)+'" style="color:#d63638;border-color:#d63638;font-size:11px">Delete</button></td></tr>';
+        });
+        el.innerHTML=html+'</tbody></table>';
+    }
+})();
 /* UTILS */
 function g(id){ return document.getElementById(id); }
 function setN(id,v){ var el=g(id); if(el) el.textContent=Number(v||0).toLocaleString(); }
@@ -2036,9 +2280,12 @@ function bdopt_card($type,$icon,$theme,$title,$count,$desc){
     echo '</div></div>';
 }
 function bdopt_card_opt(){
+    $bb = bdopt_s( 'backup_before_optimize', 0 );
     echo '<div class="card c-opt"><div class="card-hd"><div class="card-ico"><span class="dashicons dashicons-performance"></span></div><div class="card-ttl">Table Optimize</div></div>';
     echo '<div class="card-body"><div class="card-num" style="font-size:20px;margin-top:4px">OPTIMIZE</div><div class="card-desc">Rebuilds tables &amp; reclaims disk space<br>MyISAM + InnoDB</div>';
-    echo '<button class="card-btn" type="button" data-type="optimize"><span class="dashicons dashicons-performance"></span> Run Optimize</button></div></div>';
+    echo '<button class="card-btn" type="button" data-type="optimize"><span class="dashicons dashicons-performance"></span> Run Optimize</button>';
+    echo '<label style="display:flex;align-items:center;gap:7px;font-size:12px;margin-top:12px;cursor:pointer;padding-top:11px;border-top:1px solid #f0f0f1"><span class="tog"><input type="checkbox" id="s-backup-before" ' . checked( $bb, 1, false ) . '><span class="tog-sl"></span></span> Backup before optimize</label>';
+    echo '</div></div>';
 }
 function bdopt_setting_toggle($id,$label,$desc,$checked){
     echo '<div class="s-row"><div class="s-lbl">'.wp_kses_post($label).' <small>'.wp_kses_post($desc).'</small></div>';

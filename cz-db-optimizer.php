@@ -760,6 +760,7 @@ function bdopt_create_backup() {
     if ( ! $handle ) return false;
 
     set_time_limit( 0 );
+    ignore_user_abort( true );
 
     $w = function( $s ) use ( $handle ) { gzwrite( $handle, $s ); };
 
@@ -1461,7 +1462,7 @@ function bdopt_render_page() {
             <button class="button button-primary" type="button" id="btn-backup" style="padding-left:20px;padding-right:20px;height:36px">
                 <span class="dashicons dashicons-backup"></span> Create Backup Now
             </button>
-            <span style="font-size:12px;color:#646970">Backups stored in <code>wp-content/db-backups/</code></span>
+            <span style="font-size:12px;color:#646970">Stored in <code>wp-content/db-backups/</code> — large DBs may take a few minutes</span>
         </div>
         <div id="backup-list" style="padding:0 18px 14px">
             <?php

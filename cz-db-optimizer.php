@@ -749,7 +749,7 @@ function bdopt_delete_backup( $name ) {
     return unlink( $path );
 }
 
-function bdopt_create_backup() {
+function bdopt_create_backup( $progress = null ) {
     global $wpdb;
     $dir   = bdopt_backup_dir();
     $time  = current_time( 'Y-m-d-H-i-s' );
@@ -777,8 +777,18 @@ function bdopt_create_backup() {
         return false;
     }
 
+    $total = count( $tables );
+    $i     = 0;
     foreach ( $tables as $tbl ) {
+        $i++;
         $name = $tbl[0];
+
+        if ( is_callable( $progress ) ) {
+            $progress( $i, $total, $name );
+        }
+
+        // Small pause between tables to reduce server load
+        if ( $i > 1 ) usleep( 200000 );
 
         $create = $wpdb->get_row( "SHOW CREATE TABLE `{$name}`", ARRAY_N );
         if ( ! $create || empty( $create[1] ) ) continue;
@@ -790,8 +800,9 @@ function bdopt_create_backup() {
         $cnt = (int) $wpdb->get_var( "SELECT COUNT(*) FROM `{$name}`" );
         if ( $cnt === 0 ) continue;
 
-        $offset = 0;
-        $chunk  = 500;
+        $offset     = 0;
+        $chunk      = 500;
+        $chunk_ct   = 0;
         while ( $offset < $cnt ) {
             $rows = $wpdb->get_results( "SELECT * FROM `{$name}` LIMIT {$offset}, {$chunk}", ARRAY_N );
             if ( empty( $rows ) ) break;
@@ -804,6 +815,8 @@ function bdopt_create_backup() {
                 $w( "INSERT INTO `{$name}` VALUES (" . implode( ',', $vals ) . ");\n" );
             }
             $offset += $chunk;
+            $chunk_ct++;
+            if ( $chunk_ct % 10 === 0 ) usleep( 100000 );
         }
         $w( "\n" );
     }
@@ -1103,21 +1116,60 @@ add_action('wp_ajax_bdopt_get_breakdown', function() {
 });
 
 // ================================================================
-// AJAX: BACKUP CREATE
+// AJAX: BACKUP CREATE (background — closes connection immediately)
 // ================================================================
 add_action('wp_ajax_bdopt_create_backup', function() {
     check_ajax_referer('bdopt_nonce','nonce');
     if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
 
-    $result = bdopt_create_backup();
-    if ( false === $result ) {
-        wp_send_json_error( array( 'message' => 'Backup failed — check disk space or permissions.' ) );
-    }
+    // Set running flag
+    set_transient( 'bdopt_backup_progress', array(
+        'status' => 'running', 'pct' => 0, 'file' => '', 'error' => '',
+    ), HOUR_IN_SECONDS );
 
-    wp_send_json_success( array(
-        'backup'  => $result,
-        'backups' => bdopt_get_backups(),
-    ));
+    // Close connection so browser doesn't wait
+    ignore_user_abort( true );
+    while ( ob_get_level() ) ob_end_clean();
+    $resp = wp_json_encode( array( 'success' => true, 'data' => array( 'started' => true ) ) );
+    header( 'Content-Type: application/json' );
+    header( 'Content-Length: ' . strlen( $resp ) );
+    header( 'Connection: close' );
+    echo $resp;
+    ob_flush();
+    flush();
+    if ( function_exists( 'fastcgi_finish_request' ) ) fastcgi_finish_request();
+
+    // Run backup in background with progress updates
+    $result = bdopt_create_backup( function( $i, $total, $name ) {
+        set_transient( 'bdopt_backup_progress', array(
+            'status' => 'running',
+            'pct'    => min( 99, round( $i / $total * 100 ) ),
+            'file'   => $name,
+            'error'  => '',
+        ), HOUR_IN_SECONDS );
+    } );
+
+    if ( false === $result ) {
+        set_transient( 'bdopt_backup_progress', array(
+            'status' => 'error', 'pct' => 0, 'file' => '', 'error' => 'Backup failed — check disk space or permissions.',
+        ), HOUR_IN_SECONDS );
+    } else {
+        set_transient( 'bdopt_backup_progress', array(
+            'status' => 'done', 'pct' => 100, 'file' => $result['name'], 'error' => '',
+        ), HOUR_IN_SECONDS );
+    }
+});
+
+// ================================================================
+// AJAX: BACKUP STATUS (polled by JS)
+// ================================================================
+add_action('wp_ajax_bdopt_backup_status', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    $p = get_transient( 'bdopt_backup_progress' );
+    if ( ! $p ) $p = array( 'status' => 'idle', 'pct' => 0, 'file' => '', 'error' => '' );
+    wp_send_json_success( $p );
 });
 
 // ================================================================
@@ -2202,17 +2254,50 @@ document.getElementById('bdopt').addEventListener('click',function(e){
     if(!btn) return;
     btn.addEventListener('click',function(){
         var orig=btn.innerHTML;
-        btn.disabled=true; btn.innerHTML='<span class="bsp"></span> Backing up...';
+        btn.disabled=true; btn.innerHTML='<span class="bsp"></span> Starting backup...';
         xpost({action:'bdopt_create_backup',nonce:NONCE},
         function(res){
-            btn.disabled=false; btn.innerHTML=orig;
-            if(res.success) {
-                toast('\u2713 Backup created: '+res.data.backup.name,false);
-                renderBackups(res.data.backups);
-            } else toast('\u2717 Backup failed!',true);
+            if(res.success&&res.data.started){
+                btn.innerHTML='<span class="bsp"></span> Backing up <span id="bp-progress">0%</span>';
+                pollBackup();
+            } else {
+                btn.disabled=false; btn.innerHTML=orig;
+                toast('\u2717 Backup failed to start!',true);
+            }
         },
         function(){ btn.disabled=false; btn.innerHTML=orig; toast('Network Error!',true); });
     });
+    function pollBackup(){
+        xpost({action:'bdopt_backup_status',nonce:NONCE},
+        function(res){
+            if(!res.success){ btn.disabled=false; btn.innerHTML=orig; toast('Status check failed!',true); return; }
+            var p=res.data;
+            if(p.status==='running'){
+                var pct=p.pct||0;
+                var el=g('bp-progress');
+                if(el) el.textContent=pct+'%';
+                setTimeout(pollBackup,2000);
+            } else if(p.status==='done'){
+                btn.disabled=false; btn.innerHTML=orig;
+                toast('\u2713 Backup created: '+p.file,false);
+                renderBackupsNow();
+            } else if(p.status==='error'){
+                btn.disabled=false; btn.innerHTML=orig;
+                toast('\u2717 '+(p.error||'Backup failed!'),true);
+            } else {
+                // idle — backup may have already finished
+                btn.disabled=false; btn.innerHTML=orig;
+                renderBackupsNow();
+            }
+        },
+        function(){ btn.disabled=false; btn.innerHTML=orig; toast('Network Error!',true); });
+    }
+    function renderBackupsNow(){
+        xpost({action:'bdopt_list_backups',nonce:NONCE},
+        function(res){
+            if(res.success) renderBackups(res.data.backups);
+        });
+    }
     // Delete backup
     document.getElementById('backup-list').addEventListener('click',function(ev){
         var del=ev.target.closest('[data-backup]');

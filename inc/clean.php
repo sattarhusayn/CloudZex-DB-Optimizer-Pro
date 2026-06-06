@@ -339,6 +339,8 @@ function bdopt_clean_personal_data() {
 function bdopt_delete_all_orders() {
     global $wpdb;
     if ( ! class_exists( 'WooCommerce' ) ) return 0;
+    if ( bdopt_can_set_time_limit() ) { set_time_limit( 0 ); }
+    ignore_user_abort( true );
     $p = $wpdb->prefix;
     $total = 0;
     $wpdb->query( 'SET FOREIGN_KEY_CHECKS=0' );

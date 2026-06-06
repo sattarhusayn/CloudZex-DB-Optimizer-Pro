@@ -5,8 +5,14 @@ function bdopt_backup_dir() {
     $dir = WP_CONTENT_DIR . '/cz-backups';
     if ( ! is_dir( $dir ) ) {
         mkdir( $dir, 0755, true );
-        file_put_contents( $dir . '/.htaccess', "Deny from all\nRequire all denied\n" );
-        file_put_contents( $dir . '/index.php', "<?php // Silence\n" );
+    }
+    $ht = $dir . '/.htaccess';
+    if ( ! file_exists( $ht ) ) {
+        file_put_contents( $ht, "Deny from all\nRequire all denied\n" );
+    }
+    $idx = $dir . '/index.php';
+    if ( ! file_exists( $idx ) ) {
+        file_put_contents( $idx, "<?php // Silence\n" );
     }
     return $dir;
 }
@@ -33,7 +39,13 @@ function bdopt_delete_backup( $name ) {
     $dir  = realpath( bdopt_backup_dir() );
     $path = realpath( $dir . DIRECTORY_SEPARATOR . basename( $name ) );
     if ( false === $path || strpos( $path, $dir . DIRECTORY_SEPARATOR ) !== 0 ) return false;
-    return unlink( $path );
+    $ok = @unlink( $path );
+    if ( ! $ok ) {
+        /* retry once after short delay (Windows file locks) */
+        usleep( 250000 );
+        $ok = @unlink( $path );
+    }
+    return $ok;
 }
 
 function bdopt_create_backup( $progress = null ) {
@@ -154,7 +166,12 @@ function bdopt_delete_wp_backup( $name ) {
     $dir  = realpath( bdopt_wp_backup_dir() );
     $path = realpath( $dir . DIRECTORY_SEPARATOR . basename( $name ) );
     if ( false === $path || strpos( $path, $dir . DIRECTORY_SEPARATOR ) !== 0 ) return false;
-    return unlink( $path );
+    $ok = @unlink( $path );
+    if ( ! $ok ) {
+        usleep( 250000 );
+        $ok = @unlink( $path );
+    }
+    return $ok;
 }
 
 function bdopt_create_wp_backup( $progress = null ) {

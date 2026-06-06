@@ -329,11 +329,20 @@ add_action('wp_ajax_bdopt_delete_backup', function() {
     if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
 
     $name = isset( $_POST['name'] ) ? basename( $_POST['name'] ) : '';
-    if ( empty( $name ) ) wp_die( 'Invalid name', 400 );
+    if ( empty( $name ) ) {
+        wp_send_json_error( array( 'message' => 'Invalid backup name.' ) );
+        return;
+    }
 
     $ok = bdopt_delete_backup( $name );
     if ( ! $ok ) {
-        wp_send_json_error( array( 'message' => 'Could not delete backup.' ) );
+        $err = error_get_last();
+        $msg = 'Could not delete backup.';
+        if ( $err && ! empty( $err['message'] ) ) {
+            $msg .= ' (' . $err['message'] . ')';
+        }
+        wp_send_json_error( array( 'message' => $msg ) );
+        return;
     }
 
     bdopt_add_log( 'backup', "DB Backup deleted: {$name}" );
@@ -345,7 +354,9 @@ add_action('wp_ajax_bdopt_download_backup', function() {
     if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
 
     $name = isset( $_GET['file'] ) ? basename( $_GET['file'] ) : '';
-    if ( empty( $name ) ) wp_die( 'Invalid file', 400 );
+    if ( empty( $name ) ) {
+        wp_die( 'Missing file parameter', 400 );
+    }
 
     $dir  = realpath( bdopt_backup_dir() );
     $path = realpath( $dir . DIRECTORY_SEPARATOR . $name );
@@ -431,11 +442,20 @@ add_action('wp_ajax_bdopt_delete_wp_backup', function() {
     if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
 
     $name = isset( $_POST['name'] ) ? basename( $_POST['name'] ) : '';
-    if ( empty( $name ) ) wp_die( 'Invalid name', 400 );
+    if ( empty( $name ) ) {
+        wp_send_json_error( array( 'message' => 'Invalid backup name.' ) );
+        return;
+    }
 
     $ok = bdopt_delete_wp_backup( $name );
     if ( ! $ok ) {
-        wp_send_json_error( array( 'message' => 'Could not delete backup.' ) );
+        $err = error_get_last();
+        $msg = 'Could not delete backup.';
+        if ( $err && ! empty( $err['message'] ) ) {
+            $msg .= ' (' . $err['message'] . ')';
+        }
+        wp_send_json_error( array( 'message' => $msg ) );
+        return;
     }
 
     bdopt_add_log( 'backup', "Full Site Backup deleted: {$name}" );
@@ -454,7 +474,9 @@ add_action('wp_ajax_bdopt_download_wp_backup', function() {
     if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
 
     $name = isset( $_GET['file'] ) ? basename( $_GET['file'] ) : '';
-    if ( empty( $name ) ) wp_die( 'Invalid file', 400 );
+    if ( empty( $name ) ) {
+        wp_die( 'Missing file parameter', 400 );
+    }
 
     $dir  = realpath( bdopt_wp_backup_dir() );
     $path = realpath( $dir . DIRECTORY_SEPARATOR . $name );
@@ -488,7 +510,10 @@ add_action('wp_ajax_bdopt_restore_backup', function() {
     if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
 
     $name = isset( $_POST['name'] ) ? basename( $_POST['name'] ) : '';
-    if ( empty( $name ) ) wp_die( 'Invalid name', 400 );
+    if ( empty( $name ) ) {
+        wp_send_json_error( array( 'message' => 'Invalid backup name.' ) );
+        return;
+    }
 
     set_transient( 'bdopt_import_progress', array(
         'status' => 'running', 'pct' => 0, 'msg' => 'Starting restore...', 'error' => '',
@@ -529,7 +554,10 @@ add_action('wp_ajax_bdopt_restore_wp_backup', function() {
     if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
 
     $name = isset( $_POST['name'] ) ? basename( $_POST['name'] ) : '';
-    if ( empty( $name ) ) wp_die( 'Invalid name', 400 );
+    if ( empty( $name ) ) {
+        wp_send_json_error( array( 'message' => 'Invalid backup name.' ) );
+        return;
+    }
 
     set_transient( 'bdopt_import_progress', array(
         'status' => 'running', 'pct' => 0, 'msg' => 'Starting ZIP restore...', 'error' => '',

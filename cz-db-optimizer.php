@@ -13,7 +13,7 @@
 
 if ( ! defined( 'ABSPATH' ) ) exit;
 
-define( 'BDOPT_VERSION', '8.0.0' );
+define( 'BDOPT_VERSION', '8.0.1' );
 define( 'BDOPT_FILE', __FILE__ );
 define( 'BDOPT_DIR', __DIR__ );
 

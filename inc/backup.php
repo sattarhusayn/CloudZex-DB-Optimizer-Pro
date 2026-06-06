@@ -390,7 +390,8 @@ function bdopt_restore_backup( $name, $progress = null ) {
             $result = $wpdb->query( $stmt );
             if ( $result === false ) {
                 $is_gz ? gzclose( $handle ) : fclose( $handle );
-                return array( 'success' => false, 'error' => $wpdb->last_error, 'at' => $total + 1 );
+                bdopt_add_log( 'error', "SQL import error at query {$total}: {$wpdb->last_error}" );
+                return array( 'success' => false, 'error' => 'SQL import failed at query ' . ( $total + 1 ) . '.' );
             }
             $total++;
 
@@ -572,13 +573,15 @@ function bdopt_restore_from_zip( $zippath, $progress = null ) {
         $name = $zip->getNameIndex( $i );
         if ( $name === 'database.sql' ) continue;
         if ( strpos( $name, 'wp-content/' ) === 0 ) {
+            if ( strpos( $name, '..' ) !== false ) {
+                continue;
+            }
             $entries[] = $name;
         }
     }
 
     if ( ! empty( $entries ) ) {
         $total_extract = count( $entries );
-        /* extract one by one so we can report progress */
         for ( $ei = 0; $ei < $total_extract; $ei++ ) {
             $zip->extractTo( ABSPATH, $entries[ $ei ] );
             if ( is_callable( $progress ) && $total_extract > 0 ) {
@@ -645,7 +648,8 @@ function bdopt_import_sql( $filepath, $progress = null ) {
             $result = $wpdb->query( $stmt );
             if ( $result === false ) {
                 $is_gz ? gzclose( $handle ) : fclose( $handle );
-                return array( 'success' => false, 'error' => $wpdb->last_error, 'at' => $total + 1 );
+                bdopt_add_log( 'error', "SQL import error at query {$total}: {$wpdb->last_error}" );
+                return array( 'success' => false, 'error' => 'SQL import failed at query ' . ( $total + 1 ) . '.' );
             }
             $total++;
 
@@ -720,9 +724,11 @@ function bdopt_migrate_domain( $old_url, $new_url, $progress = null ) {
     /* ── Helper: search & replace a field, handling serialized data ── */
     $safereplace = function( $value ) use ( $old_url, $new_url, $rec_replace ) {
         if ( ! is_string( $value ) ) return $value;
-        $un = @unserialize( $value );
-        if ( $un !== false ) {
-            return serialize( $rec_replace( $un ) );
+        if ( preg_match( '/^[aOs]:/', $value ) && is_serialized( $value ) ) {
+            $un = @unserialize( $value, array( 'allowed_classes' => false ) );
+            if ( $un !== false ) {
+                return serialize( $rec_replace( $un ) );
+            }
         }
         return str_replace( $old_url, $new_url, $value );
     };
@@ -859,21 +865,12 @@ function bdopt_scan_orphan_media( $progress = null ) {
 
     if ( is_callable( $progress ) ) $progress( 0, 100, 'Scanning uploads...' );
 
-    /* collect all attachment file paths from DB */
     $attached = $wpdb->get_col( "SELECT meta_value FROM {$wpdb->postmeta} WHERE meta_key = '_wp_attached_file'" );
     $db_files = array();
     foreach ( $attached as $v ) {
-        $db_files[ basename( $v ) ] = true;
+        $db_files[ $v ] = true;
     }
 
-    /* also check guid-based filenames */
-    $guids = $wpdb->get_col( "SELECT guid FROM {$wpdb->posts} WHERE post_type = 'attachment'" );
-    foreach ( $guids as $g ) {
-        $bn = basename( $g );
-        if ( $bn ) $db_files[ $bn ] = true;
-    }
-
-    /* scan uploads for orphans */
     $orphans = array();
     $total_size = 0;
     $it = new RecursiveIteratorIterator( new RecursiveDirectoryIterator( $dir, RecursiveDirectoryIterator::SKIP_DOTS ) );
@@ -881,9 +878,9 @@ function bdopt_scan_orphan_media( $progress = null ) {
     foreach ( $it as $f ) {
         if ( ! $f->isFile() ) continue;
         $checked++;
-        $bn = $f->getFilename();
-        if ( ! isset( $db_files[ $bn ] ) ) {
-            $rp = $f->getPathname();
+        $rp = $f->getPathname();
+        $relative = ltrim( substr( $rp, strlen( $dir ) + 1 ), '\\/' );
+        if ( ! isset( $db_files[ $relative ] ) && ! isset( $db_files[ basename( $relative ) ] ) ) {
             $orphans[] = $rp;
             $total_size += $f->getSize();
         }

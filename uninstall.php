@@ -26,31 +26,43 @@ if ( file_exists( $dropin ) ) {
     }
 }
 
-/* clean WP_CACHE from wp-config.php */
 $config_file = ABSPATH . 'wp-config.php';
 if ( file_exists( $config_file ) && is_writable( $config_file ) ) {
     $content = file_get_contents( $config_file );
-    $new = preg_replace(
-        "/define\s*\(\s*'WP_CACHE'\s*,\s*true\s*\)\s*;\s*\/\/.*\n?/i",
-        '',
-        $content
-    );
-    $new = preg_replace(
-        "/define\s*\(\s*'WP_CACHE'\s*,\s*true\s*\)\s*;\s*\n?/i",
-        '',
-        $new
-    );
-    $new = preg_replace(
-        "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\/\/.*\n?/i",
-        '',
-        $new
-    );
-    $new = preg_replace(
-        "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\n?/i",
-        '',
-        $new
-    );
-    if ( $new !== null && $new !== $content ) {
-        file_put_contents( $config_file, $new );
+    if ( $content !== false ) {
+        $bak = $config_file . '.uninstall-bak';
+        copy( $config_file, $bak );
+        $new = preg_replace(
+            "/define\s*\(\s*'WP_CACHE'\s*,\s*true\s*\)\s*;\s*\/\/.*\n?/i",
+            '',
+            $content
+        );
+        $new = preg_replace(
+            "/define\s*\(\s*'WP_CACHE'\s*,\s*true\s*\)\s*;\s*\n?/i",
+            '',
+            $new
+        );
+        $new = preg_replace(
+            "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\/\/.*\n?/i",
+            '',
+            $new
+        );
+        $new = preg_replace(
+            "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\n?/i",
+            '',
+            $new
+        );
+        if ( $new !== null && $new !== $content ) {
+            $fp = fopen( $config_file, 'c' );
+            if ( $fp && flock( $fp, LOCK_EX ) ) {
+                ftruncate( $fp, 0 );
+                fwrite( $fp, $new );
+                fflush( $fp );
+                flock( $fp, LOCK_UN );
+                fclose( $fp );
+            } else {
+                file_put_contents( $config_file, $new );
+            }
+        }
     }
 }

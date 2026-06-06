@@ -257,19 +257,28 @@ function bdopt_clean_revisions( $keep = 3 ) {
     global $wpdb;
     $keep  = max( 0, (int) $keep );
     $del   = 0;
-    $posts = $wpdb->get_col( "SELECT ID FROM `{$wpdb->posts}` WHERE post_type = 'post' AND post_status IN ('publish','draft')" );
-    foreach ( $posts as $pid ) {
-        $revs = $wpdb->get_col( $wpdb->prepare(
-            "SELECT ID FROM `{$wpdb->posts}` WHERE post_type = 'revision' AND post_parent = %d ORDER BY post_date DESC",
-            (int) $pid
+    $offset = 0;
+    $limit  = 100;
+    while ( $del < 5000 ) {
+        $posts = $wpdb->get_col( $wpdb->prepare(
+            "SELECT ID FROM `{$wpdb->posts}` WHERE post_type = 'post' AND post_status IN ('publish','draft') LIMIT %d OFFSET %d",
+            $limit, $offset
         ) );
-        if ( count( $revs ) <= $keep ) continue;
-        $to_del = array_slice( $revs, $keep );
-        foreach ( $to_del as $rid ) {
-            wp_delete_post_revision( (int) $rid );
-            $del++;
+        if ( empty( $posts ) ) break;
+        foreach ( $posts as $pid ) {
+            $revs = $wpdb->get_col( $wpdb->prepare(
+                "SELECT ID FROM `{$wpdb->posts}` WHERE post_type = 'revision' AND post_parent = %d ORDER BY post_date DESC",
+                (int) $pid
+            ) );
+            if ( count( $revs ) <= $keep ) continue;
+            $to_del = array_slice( $revs, $keep );
+            foreach ( $to_del as $rid ) {
+                wp_delete_post_revision( (int) $rid );
+                $del++;
+                if ( $del >= 5000 ) break 2;
+            }
         }
-        if ( $del >= 5000 ) break;
+        $offset += $limit;
     }
     return $del;
 }

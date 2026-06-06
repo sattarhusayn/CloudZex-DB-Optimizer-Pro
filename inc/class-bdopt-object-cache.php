@@ -215,9 +215,11 @@ class BDOPT_Redis_Object_Cache {
         $this->cache = array();
         if ( $this->connected ) {
             try {
-                $keys = $this->redis->keys( $this->prefix . '*' );
-                if ( ! empty( $keys ) ) {
-                    $this->redis->del( $keys );
+                $it = null;
+                while ( $keys = $this->redis->scan( $it, $this->prefix . '*' ) ) {
+                    if ( ! empty( $keys ) ) {
+                        $this->redis->del( $keys );
+                    }
                 }
             } catch ( Exception $e ) {}
         }

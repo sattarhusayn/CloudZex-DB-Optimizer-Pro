@@ -93,16 +93,27 @@ add_action('wp_ajax_bdopt_cache_action', function() {
         if ( ! file_exists( $source ) ) {
             wp_send_json_error( array( 'message' => 'Plugin drop-in file missing.' ) );
         }
-        if ( copy( $source, $target ) ) {
+        // Inject actual plugin path into the drop-in bootstrap
+        $dropin_content = file_get_contents( $source );
+        $dropin_content = str_replace( '%%BDOPT_DIR%%', BDOPT_DIR, $dropin_content );
+        if ( file_put_contents( $target, $dropin_content ) ) {
             $config_file = ABSPATH . 'wp-config.php';
             if ( file_exists( $config_file ) && is_writable( $config_file ) ) {
                 $content = file_get_contents( $config_file );
                 if ( preg_match( "/define\s*\(\s*'WP_CACHE'\s*,/i", $content ) === 0 ) {
                     $insert = "define('WP_CACHE', true); // Added by CloudZex DB Optimizer\n";
                     $content = preg_replace( '/^<\?php\s*/', "<?php\n" . $insert, $content, 1 );
-                    if ( $content !== null ) {
-                        file_put_contents( $config_file, $content );
-                    }
+                }
+                /* Write BDOPT_CACHE_TTL constant if set */
+                $content = preg_replace( "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\/\/.*\n?/i", '', $content );
+                $content = preg_replace( "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\n?/i", '', $content );
+                $ttl = (int) bdopt_s( 'cache_ttl', 0 );
+                if ( $ttl > 0 ) {
+                    $insert = "define('BDOPT_CACHE_TTL', {$ttl}); // Added by CloudZex DB Optimizer\n";
+                    $content = preg_replace( '/^<\?php\s*/', "<?php\n" . $insert, $content, 1 );
+                }
+                if ( $content !== null ) {
+                    file_put_contents( $config_file, $content );
                 }
             }
             bdopt_add_log( 'cache', 'Object cache enabled' );
@@ -123,6 +134,16 @@ add_action('wp_ajax_bdopt_cache_action', function() {
                     );
                     $new_content = preg_replace(
                         "/define\s*\(\s*'WP_CACHE'\s*,\s*true\s*\)\s*;\s*\n?/i",
+                        '',
+                        $new_content
+                    );
+                    $new_content = preg_replace(
+                        "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\/\/.*\n?/i",
+                        '',
+                        $new_content
+                    );
+                    $new_content = preg_replace(
+                        "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\n?/i",
                         '',
                         $new_content
                     );
@@ -247,6 +268,7 @@ add_action('wp_ajax_bdopt_save_settings', function() {
         'log_days'       => max(1, (int)(isset($_POST['log_days'])      ? $_POST['log_days']      : 7)),
         'revision_keep'  => max(0, (int)(isset($_POST['revision_keep']) ? $_POST['revision_keep'] : 3)),
         'backup_mode'    => isset( $_POST['backup_mode'] ) && in_array( $_POST['backup_mode'], array( 'background', 'browser' ), true ) ? $_POST['backup_mode'] : 'background',
+        'cache_ttl'      => max(0, (int)(isset($_POST['cache_ttl']) ? $_POST['cache_ttl'] : 0)),
     );
     foreach ( $bools as $f ) {
         $s[$f] = (int)( isset($_POST[$f]) ? $_POST[$f] : 0 );
@@ -254,7 +276,53 @@ add_action('wp_ajax_bdopt_save_settings', function() {
 
     update_option('bdopt_settings', $s);
     bdopt_reschedule();
+
+    /* Sync cache_ttl to wp-config.php for early access by the drop-in */
+    $config_file = ABSPATH . 'wp-config.php';
+    if ( file_exists( $config_file ) && is_writable( $config_file ) ) {
+        $content = file_get_contents( $config_file );
+        $content = preg_replace( "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\/\/.*\n?/i", '', $content );
+        $content = preg_replace( "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\n?/i", '', $content );
+        $ttl = (int) $s['cache_ttl'];
+        if ( $ttl > 0 ) {
+            $insert = "define('BDOPT_CACHE_TTL', {$ttl}); // Added by CloudZex DB Optimizer\n";
+            $content = preg_replace( '/^<\?php\s*/', "<?php\n" . $insert, $content, 1 );
+        }
+        if ( $content !== null ) {
+            file_put_contents( $config_file, $content );
+        }
+    }
+
     wp_send_json_success(array('message' => 'Settings saved!'));
+});
+
+add_action('wp_ajax_bdopt_save_cache_ttl', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    $ttl = max(0, min(86400, (int)(isset($_POST['cache_ttl']) ? $_POST['cache_ttl'] : 0)));
+
+    /* Merge into existing settings */
+    $s = wp_parse_args( (array) get_option( 'bdopt_settings', array() ), bdopt_defaults() );
+    $s['cache_ttl'] = $ttl;
+    update_option('bdopt_settings', $s);
+
+    /* Write BDOPT_CACHE_TTL to wp-config.php */
+    $config_file = ABSPATH . 'wp-config.php';
+    if ( file_exists( $config_file ) && is_writable( $config_file ) ) {
+        $content = file_get_contents( $config_file );
+        $content = preg_replace( "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\/\/.*\n?/i", '', $content );
+        $content = preg_replace( "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\n?/i", '', $content );
+        if ( $ttl > 0 ) {
+            $insert = "define('BDOPT_CACHE_TTL', {$ttl}); // Added by CloudZex DB Optimizer\n";
+            $content = preg_replace( '/^<\?php\s*/', "<?php\n" . $insert, $content, 1 );
+        }
+        if ( $content !== null ) {
+            file_put_contents( $config_file, $content );
+        }
+    }
+
+    wp_send_json_success(array('message' => 'Cache TTL saved!'));
 });
 
 add_action('wp_ajax_bdopt_get_breakdown', function() {

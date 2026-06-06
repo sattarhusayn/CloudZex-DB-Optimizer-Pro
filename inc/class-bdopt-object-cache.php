@@ -51,6 +51,9 @@ class BDOPT_Redis_Object_Cache {
 
     public function add( $key, $data, $group = 'default', $expire = 0 ) {
         $this->stats['add']++;
+        if ( $expire === 0 && defined( 'BDOPT_CACHE_TTL' ) && BDOPT_CACHE_TTL > 0 ) {
+            $expire = (int) BDOPT_CACHE_TTL;
+        }
         if ( isset( $this->cache[ $group ][ $key ] ) ) {
             return false;
         }
@@ -72,6 +75,10 @@ class BDOPT_Redis_Object_Cache {
 
     public function set( $key, $data, $group = 'default', $expire = 0 ) {
         $this->stats['set']++;
+        /* Apply default TTL from BDOPT_CACHE_TTL constant if no explicit expire */
+        if ( $expire === 0 && defined( 'BDOPT_CACHE_TTL' ) && BDOPT_CACHE_TTL > 0 ) {
+            $expire = (int) BDOPT_CACHE_TTL;
+        }
         $this->cache[ $group ][ $key ] = $data;
         if ( $this->connected && $this->is_persistent( $group ) ) {
             $k = $this->key( $key, $group );
@@ -80,8 +87,6 @@ class BDOPT_Redis_Object_Cache {
                 $this->redis->set( $k, $v );
                 if ( $expire > 0 ) {
                     $this->redis->expire( $k, $expire );
-                } else {
-                    $this->redis->persist( $k );
                 }
             } catch ( Exception $e ) {}
         }

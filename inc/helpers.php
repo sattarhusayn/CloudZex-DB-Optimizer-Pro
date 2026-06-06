@@ -28,6 +28,7 @@ function bdopt_defaults() {
         'perf_oembed'       => 0,
         'backup_before_optimize' => 0,
         'backup_mode'            => 'background',
+        'cache_ttl'              => 0,
     );
 }
 

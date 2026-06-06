@@ -485,6 +485,17 @@ function bdopt_render_page() {
                 </div>
             </div>
         </div>
+        <div class="box" style="margin:12px 18px;padding:14px 18px;border:1px solid #c3c4c7;border-radius:6px">
+            <form id="cache-ttl-form" style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <label for="cache_ttl" style="font-weight:600;font-size:13px">Default Cache TTL</label>
+                <input type="number" id="cache_ttl" name="cache_ttl" min="0" max="86400" step="60"
+                       value="<?php echo (int) bdopt_s('cache_ttl',0); ?>"
+                       style="width:100px;padding:4px 8px">
+                <span style="font-size:12px;color:#646970">seconds (0 = no expiry, max 86400 = 24h)</span>
+                <button type="submit" class="button button-secondary" id="btn-save-cache-ttl">Save</button>
+                <span id="ttl-msg" style="font-size:12px;color:#646970;display:none"></span>
+            </form>
+        </div>
         <div id="cache-action-area" style="padding:0 18px 18px">
             <?php if ( ! $redis_avail ) : ?>
                 <div class="s-row" style="border:1px solid #f0c;border-radius:6px;background:#fef3cd;padding:14px 18px;margin:0">

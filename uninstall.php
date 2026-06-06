@@ -40,6 +40,16 @@ if ( file_exists( $config_file ) && is_writable( $config_file ) ) {
         '',
         $new
     );
+    $new = preg_replace(
+        "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\/\/.*\n?/i",
+        '',
+        $new
+    );
+    $new = preg_replace(
+        "/define\s*\(\s*'BDOPT_CACHE_TTL'\s*,\s*\d+\s*\)\s*;\s*\n?/i",
+        '',
+        $new
+    );
     if ( $new !== null && $new !== $content ) {
         file_put_contents( $config_file, $new );
     }

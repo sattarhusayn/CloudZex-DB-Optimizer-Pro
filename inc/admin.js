@@ -338,6 +338,34 @@ g('btn-brk-ref').addEventListener('click',function(){ brkLoaded=false; loadBreak
     if(dis) dis.addEventListener('click',function(){ doCache('disable'); });
 })();
 
+/* Cache TTL save */
+(function(){
+    var form=g('cache-ttl-form'), msg=g('ttl-msg');
+    if(!form) return;
+    form.addEventListener('submit',function(e){
+        e.preventDefault();
+        var val=parseInt(g('cache_ttl').value,10);
+        if(isNaN(val)||val<0) val=0;
+        if(val>86400) val=86400;
+        if(msg){ msg.style.display='inline'; msg.textContent='Saving...'; msg.style.color='#646970'; }
+        xpost({action:'bdopt_save_cache_ttl',nonce:BDOPT_NONCE,cache_ttl:val},
+            function(res){
+                if(msg){
+                    if(res.success){
+                        msg.style.color='#1a7d34';
+                        msg.innerHTML='&#10003; TTL saved ('+val+'s)';
+                    } else {
+                        msg.style.color='#d63638';
+                        msg.innerHTML='&#10007; '+esc(res.data.message);
+                    }
+                    setTimeout(function(){ msg.style.display='none'; },3000);
+                }
+            },
+            function(){ if(msg){ msg.style.display='inline'; msg.style.color='#d63638'; msg.textContent='Network Error!'; } }
+        );
+    });
+})();
+
 document.getElementById('bdopt').addEventListener('click',function(e){
     var el=e.target.closest('[data-cache]');
     if(!el||el.disabled) return;

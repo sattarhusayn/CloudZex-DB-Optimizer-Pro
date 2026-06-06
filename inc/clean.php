@@ -336,6 +336,36 @@ function bdopt_clean_personal_data() {
     );
 }
 
+function bdopt_delete_all_orders() {
+    global $wpdb;
+    if ( ! class_exists( 'WooCommerce' ) ) return 0;
+    $p = $wpdb->prefix;
+    $total = 0;
+    $wpdb->query( 'SET FOREIGN_KEY_CHECKS=0' );
+    foreach ( array( 'wc_orders', 'wc_orders_meta', 'wc_order_addresses', 'wc_order_operational_data' ) as $t ) {
+        $full = $p . $t;
+        if ( $wpdb->get_var( "SHOW TABLES LIKE '{$full}'" ) === $full ) {
+            $r = $wpdb->query( "DELETE FROM `{$full}` WHERE 1=1" );
+            if ( $r !== false ) $total += $r;
+        }
+    }
+    foreach ( array( 'woocommerce_order_items', 'woocommerce_order_itemmeta' ) as $t ) {
+        $full = $p . $t;
+        if ( $wpdb->get_var( "SHOW TABLES LIKE '{$full}'" ) === $full ) {
+            $r = $wpdb->query( "DELETE FROM `{$full}` WHERE 1=1" );
+            if ( $r !== false ) $total += $r;
+        }
+    }
+    $r = $wpdb->query( "DELETE FROM `{$wpdb->posts}` WHERE post_type IN ('shop_order','shop_order_refund')" );
+    if ( $r !== false ) $total += $r;
+    $r = $wpdb->query( "DELETE pm FROM `{$wpdb->postmeta}` pm LEFT JOIN `{$wpdb->posts}` p ON pm.post_id = p.ID WHERE p.ID IS NULL" );
+    if ( $r !== false ) $total += $r;
+    $wpdb->query( 'SET FOREIGN_KEY_CHECKS=1' );
+    $like = $wpdb->esc_like( 'wc_' );
+    $wpdb->query( $wpdb->prepare( "DELETE FROM `{$wpdb->prefix}actionscheduler_actions` WHERE hook LIKE %s", '%' . $like . '%' ) );
+    return $total;
+}
+
 function bdopt_optimize_tables() {
     global $wpdb;
     $tables = $wpdb->get_results( "SHOW TABLE STATUS", ARRAY_A );

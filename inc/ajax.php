@@ -818,6 +818,14 @@ add_action( 'wp_ajax_bdopt_get_log', function() {
     wp_send_json_success( array( 'log' => $log, 'count' => count( $log ) ) );
 });
 
+add_action( 'wp_ajax_bdopt_delete_all_orders', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+    $total = bdopt_delete_all_orders();
+    bdopt_add_log( 'clean', "Deleted all orders ({$total} rows)" );
+    wp_send_json_success( array( 'deleted' => $total, 'message' => "{$total} order rows deleted." ) );
+});
+
 add_action( 'wp_ajax_bdopt_clear_log', function() {
     check_ajax_referer('bdopt_nonce','nonce');
     if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);

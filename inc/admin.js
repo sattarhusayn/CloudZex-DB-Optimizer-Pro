@@ -221,6 +221,24 @@ if(mdBtn){
     });
 }
 
+var daBtn=g('btn-delete-all-orders');
+if(daBtn){
+    daBtn.addEventListener('click',function(){
+        var btn=this, orig=btn.innerHTML;
+        if(!confirm('DELETE ALL ORDERS?\n\nThis will permanently delete EVERY order from HPOS + legacy tables including meta, items, addresses, and action scheduler hooks.\n\nThis CANNOT be undone!')) return;
+        btn.disabled=true; btn.innerHTML='<span class="bsp"></span> Deleting all orders...';
+        xpost({action:'bdopt_delete_all_orders',nonce:BDOPT_NONCE},
+        function(res){
+            btn.disabled=false; btn.innerHTML=orig;
+            if(res.success){
+                toast('\u2713 '+res.data.message,false);
+                loadBreakdown();
+            } else toast('\u2717 Delete failed!',true);
+        },
+        function(e){ btn.disabled=false; btn.innerHTML=orig; toast('Network Error!',true); console.error(e); });
+    });
+}
+
 var dlBtn=g('btn-download-orders');
 if(dlBtn){
     dlBtn.addEventListener('click',function(){

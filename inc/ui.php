@@ -294,6 +294,9 @@ function bdopt_render_page() {
                     <button class="button button-primary" type="button" id="btn-manual-delete" style="background:#d63638;border-color:#d63638">
                         <span class="dashicons dashicons-trash"></span> Delete Selected Orders
                 </button>
+                    <button class="button button-secondary" type="button" id="btn-delete-all-orders" style="color:#b32d2e;border-color:#b32d2e">
+                        <span class="dashicons dashicons-warning"></span> Delete ALL Orders
+                </button>
             </div>
         </div>
     </div>

@@ -534,6 +534,7 @@ function bdopt_render_page() {
             <button class="button button-primary" type="button" id="btn-backup" style="padding-left:20px;padding-right:20px;height:36px">
                 <span class="dashicons dashicons-backup"></span> Create Backup Now
             </button>
+            <button class="button button-small" type="button" id="btn-cancel-db" style="display:none;color:#d63638;border-color:#d63638;font-size:11px">Cancel</button>
             <span style="font-size:12px;color:#646970">Stored in <code>wp-content/cz-backups/</code> — large DBs may take a few minutes</span>
         </div>
         <div id="backup-list" style="padding:0 18px 14px">
@@ -567,6 +568,7 @@ function bdopt_render_page() {
             <button class="button button-primary" type="button" id="btn-wp-backup" style="padding-left:20px;padding-right:20px;height:36px">
                 <span class="dashicons dashicons-portfolio"></span> Create Full Backup Now
             </button>
+            <button class="button button-small" type="button" id="btn-cancel-wp" style="display:none;color:#d63638;border-color:#d63638;font-size:11px">Cancel</button>
             <span style="font-size:12px;color:#646970">Creates <code>database.sql</code> + <code>wp-content/</code> inside ZIP — site migration ready!</span>
         </div>
         <div id="wp-backup-list" style="padding:0 18px 14px">

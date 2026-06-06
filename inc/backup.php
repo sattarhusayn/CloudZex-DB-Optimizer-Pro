@@ -48,6 +48,14 @@ function bdopt_delete_backup( $name ) {
     return $ok;
 }
 
+function bdopt_can_set_time_limit() {
+    static $can = null;
+    if ( $can !== null ) return $can;
+    $disabled = explode( ',', ini_get( 'disable_functions' ) );
+    $can = function_exists( 'set_time_limit' ) && ! in_array( 'set_time_limit', array_map( 'trim', $disabled ), true );
+    return $can;
+}
+
 function bdopt_create_backup( $progress = null ) {
     global $wpdb;
     $dir   = bdopt_backup_dir();
@@ -69,7 +77,7 @@ function bdopt_create_backup( $progress = null ) {
     $handle = gzopen( $tmp, 'w9' );
     if ( ! $handle ) { bdopt_add_log( 'error', 'DB backup failed: Cannot open temp file' ); return false; }
 
-    set_time_limit( 0 );
+    if ( bdopt_can_set_time_limit() ) { set_time_limit( 0 ); }
     ignore_user_abort( true );
 
     $w = function( $s ) use ( $handle ) { gzwrite( $handle, $s ); };
@@ -184,7 +192,7 @@ function bdopt_create_wp_backup( $progress = null ) {
 
     foreach ( glob( $dir . '/wp-backup-*.zip.tmp' ) as $stale ) { @unlink( $stale ); }
 
-    set_time_limit( 0 );
+    if ( bdopt_can_set_time_limit() ) { set_time_limit( 0 ); }
     ignore_user_abort( true );
 
     if ( ! class_exists( 'ZipArchive' ) ) { bdopt_add_log( 'error', 'Full backup failed: ZipArchive class not found' ); return false; }
@@ -336,7 +344,7 @@ function bdopt_restore_backup( $name, $progress = null ) {
         return array( 'success' => false, 'error' => 'Backup file not found.' );
     }
 
-    set_time_limit( 0 );
+    if ( bdopt_can_set_time_limit() ) { set_time_limit( 0 ); }
     ignore_user_abort( true );
 
     $ext = pathinfo( $path, PATHINFO_EXTENSION );
@@ -591,7 +599,7 @@ function bdopt_import_sql( $filepath, $progress = null ) {
         return array( 'success' => false, 'error' => 'File not found: ' . $filepath );
     }
 
-    set_time_limit( 0 );
+    if ( bdopt_can_set_time_limit() ) { set_time_limit( 0 ); }
     ignore_user_abort( true );
 
     $ext = pathinfo( $filepath, PATHINFO_EXTENSION );
@@ -682,7 +690,7 @@ function bdopt_migrate_domain( $old_url, $new_url, $progress = null ) {
         return array( 'success' => true, 'message' => 'URLs are the same, nothing to replace.', 'total' => 0 );
     }
 
-    set_time_limit( 0 );
+    if ( bdopt_can_set_time_limit() ) { set_time_limit( 0 ); }
     ignore_user_abort( true );
 
     /* ── Helper: recursively replace in arrays/objects ── */
@@ -846,7 +854,7 @@ function bdopt_scan_orphan_media( $progress = null ) {
     $dir = WP_CONTENT_DIR . '/uploads';
     if ( ! is_dir( $dir ) ) return array( 'success' => true, 'orphans' => array(), 'total' => 0, 'size' => 0 );
 
-    set_time_limit( 0 );
+    if ( bdopt_can_set_time_limit() ) { set_time_limit( 0 ); }
     ignore_user_abort( true );
 
     if ( is_callable( $progress ) ) $progress( 0, 100, 'Scanning uploads...' );

@@ -275,7 +275,13 @@ add_action('wp_ajax_bdopt_create_backup', function() {
 
     $mode = bdopt_s( 'backup_mode', 'background' );
 
-    if ( $mode === 'background' ) {
+    /* auto-fallback to browser if set_time_limit is disabled */
+    if ( $mode === 'background' && ! bdopt_can_set_time_limit() ) {
+        $mode = 'browser';
+    }
+
+    $background = $mode === 'background';
+    if ( $background ) {
         ignore_user_abort( true );
         while ( ob_get_level() ) ob_end_clean();
         $resp = wp_json_encode( array( 'success' => true, 'data' => array( 'started' => true ) ) );
@@ -298,7 +304,7 @@ add_action('wp_ajax_bdopt_create_backup', function() {
         set_transient( 'bdopt_backup_progress', array(
             'status' => 'error', 'pct' => 0, 'file' => '', 'error' => 'Backup failed — check disk space or permissions.',
         ), HOUR_IN_SECONDS );
-        if ( $mode !== 'background' ) {
+        if ( ! $background ) {
             wp_send_json_error( array( 'message' => 'Backup failed.' ) );
         }
     } else {
@@ -306,7 +312,7 @@ add_action('wp_ajax_bdopt_create_backup', function() {
             'status' => 'done', 'pct' => 100, 'file' => $result['name'], 'error' => '',
         ), HOUR_IN_SECONDS );
         bdopt_add_log( 'backup', "DB Backup created: {$result['name']}" );
-        if ( $mode !== 'background' ) {
+        if ( ! $background ) {
             wp_send_json_success( array( 'done' => true, 'name' => $result['name'] ) );
         }
     }
@@ -388,7 +394,13 @@ add_action('wp_ajax_bdopt_create_wp_backup', function() {
 
     $mode = bdopt_s( 'backup_mode', 'background' );
 
-    if ( $mode === 'background' ) {
+    /* auto-fallback to browser if set_time_limit is disabled */
+    if ( $mode === 'background' && ! bdopt_can_set_time_limit() ) {
+        $mode = 'browser';
+    }
+
+    $background = $mode === 'background';
+    if ( $background ) {
         ignore_user_abort( true );
         while ( ob_get_level() ) ob_end_clean();
         $resp = wp_json_encode( array( 'success' => true, 'data' => array( 'started' => true ) ) );
@@ -411,7 +423,7 @@ add_action('wp_ajax_bdopt_create_wp_backup', function() {
         set_transient( 'bdopt_wp_backup_progress', array(
             'status' => 'error', 'pct' => 0, 'file' => '', 'error' => 'Full backup failed — check disk space or ZipArchive.',
         ), HOUR_IN_SECONDS );
-        if ( $mode !== 'background' ) {
+        if ( ! $background ) {
             wp_send_json_error( array( 'message' => 'Full backup failed.' ) );
         }
     } else {
@@ -419,7 +431,7 @@ add_action('wp_ajax_bdopt_create_wp_backup', function() {
             'status' => 'done', 'pct' => 100, 'file' => $result['name'], 'error' => '',
         ), HOUR_IN_SECONDS );
         bdopt_add_log( 'backup', "Full Site Backup created: {$result['name']}" );
-        if ( $mode !== 'background' ) {
+        if ( ! $background ) {
             wp_send_json_success( array( 'done' => true, 'name' => $result['name'] ) );
         }
     }
@@ -435,6 +447,15 @@ add_action('wp_ajax_bdopt_wp_backup_status', function() {
         delete_transient( 'bdopt_wp_backup_progress' );
     }
     wp_send_json_success( $p );
+});
+
+add_action('wp_ajax_bdopt_cancel_backup', function() {
+    check_ajax_referer('bdopt_nonce','nonce');
+    if ( ! current_user_can('manage_options') ) wp_die('Unauthorized', 403);
+
+    delete_transient( 'bdopt_backup_progress' );
+    delete_transient( 'bdopt_wp_backup_progress' );
+    wp_send_json_success( array( 'message' => 'Backup cancelled.' ) );
 });
 
 add_action('wp_ajax_bdopt_delete_wp_backup', function() {

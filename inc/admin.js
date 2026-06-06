@@ -366,6 +366,14 @@ if(bm){
     var btn=g('btn-backup');
     if(!btn) return;
     var orig=btn.innerHTML;
+    var cancelBtn=g('btn-cancel-db');
+    if(cancelBtn){
+        cancelBtn.addEventListener('click',function(){
+            xpost({action:'bdopt_cancel_backup',nonce:BDOPT_NONCE},
+            function(){ btn.disabled=false; btn.innerHTML=orig; cancelBtn.style.display='none'; toast('Backup cancelled.',false); },
+            function(){ toast('Network Error!',true); });
+        });
+    }
     btn.addEventListener('click',function(){
         orig=btn.innerHTML;
         btn.disabled=true; btn.innerHTML='<span class="bsp"></span> Starting backup...';
@@ -389,28 +397,32 @@ if(bm){
             setTimeout(pollBackup,1000);
         }
     });
+    function showCancel(){ if(cancelBtn) cancelBtn.style.display='inline-flex'; }
+    function hideCancel(){ if(cancelBtn) cancelBtn.style.display='none'; }
     function pollBackup(){
         var cnt=parseInt(btn.dataset.bpPoll||0);
-        if(cnt>=300){ btn.disabled=false; btn.innerHTML=orig; toast('Backup timed out.',true); return; }
+        if(cnt>=1500){ btn.disabled=false; btn.innerHTML=orig; hideCancel(); toast('Backup timed out.',true); return; }
         btn.dataset.bpPoll=cnt+1;
         xpost({action:'bdopt_backup_status',nonce:BDOPT_NONCE},
         function(res){
-            if(!res.success){ btn.disabled=false; btn.innerHTML=orig; toast('Status check failed!',true); return; }
+            if(!res.success){ btn.disabled=false; btn.innerHTML=orig; hideCancel(); toast('Status check failed!',true); return; }
             var p=res.data;
             if(p.status==='running'){
+                showCancel();
                 var pct=p.pct||0;
                 var el=g('bp-progress');
                 if(el) el.textContent=pct+'%';
                 setTimeout(pollBackup,2000);
             } else if(p.status==='done'){
+                hideCancel();
                 btn.disabled=false; btn.innerHTML=orig;
                 toast('\u2713 Backup created: '+p.file,false);
                 renderBackupsNow();
             } else if(p.status==='error'){
-                btn.disabled=false; btn.innerHTML=orig;
+                btn.disabled=false; btn.innerHTML=orig; hideCancel();
                 toast('\u2717 '+(p.error||'Backup failed!'),true);
             } else {
-                btn.disabled=false; btn.innerHTML=orig;
+                btn.disabled=false; btn.innerHTML=orig; hideCancel();
                 renderBackupsNow();
             }
         },
@@ -462,6 +474,7 @@ if(bm){
         if(!res.success) return;
         var p=res.data;
         if(p.status==='running'){
+            showCancel();
             btn.disabled=true;
             btn.innerHTML='<span class="bsp"></span> Backing up <span id="bp-progress">'+(p.pct||0)+'%</span>';
             pollBackup();
@@ -478,6 +491,16 @@ if(bm){
     var btn=g('btn-wp-backup');
     if(!btn) return;
     var orig=btn.innerHTML;
+    var cancelBtn=g('btn-cancel-wp');
+    if(cancelBtn){
+        cancelBtn.addEventListener('click',function(){
+            xpost({action:'bdopt_cancel_backup',nonce:BDOPT_NONCE},
+            function(){ btn.disabled=false; btn.innerHTML=orig; cancelBtn.style.display='none'; toast('Backup cancelled.',false); },
+            function(){ toast('Network Error!',true); });
+        });
+    }
+    function showCancelWp(){ if(cancelBtn) cancelBtn.style.display='inline-flex'; }
+    function hideCancelWp(){ if(cancelBtn) cancelBtn.style.display='none'; }
     btn.addEventListener('click',function(){
         orig=btn.innerHTML;
         btn.disabled=true; btn.innerHTML='<span class="bsp"></span> Scanning site...';
@@ -503,25 +526,26 @@ if(bm){
     });
     function pollWpBackup(){
         var cnt=parseInt(btn.dataset.wpPoll||0);
-        if(cnt>=300){ btn.disabled=false; btn.innerHTML=orig; toast('Full backup timed out.',true); return; }
+        if(cnt>=1500){ btn.disabled=false; btn.innerHTML=orig; hideCancelWp(); toast('Full backup timed out.',true); return; }
         btn.dataset.wpPoll=cnt+1;
         xpost({action:'bdopt_wp_backup_status',nonce:BDOPT_NONCE},
         function(res){
-            if(!res.success){ btn.disabled=false; btn.innerHTML=orig; toast('Status check failed!',true); return; }
+            if(!res.success){ btn.disabled=false; btn.innerHTML=orig; hideCancelWp(); toast('Status check failed!',true); return; }
             var p=res.data;
             if(p.status==='running'){
+                showCancelWp();
                 var el=g('wp-bp-progress');
                 if(el) el.textContent=(p.pct||0)+'%';
                 setTimeout(pollWpBackup,2000);
             } else if(p.status==='done'){
-                btn.disabled=false; btn.innerHTML=orig;
+                btn.disabled=false; btn.innerHTML=orig; hideCancelWp();
                 toast('\u2713 Full backup: '+p.file,false);
                 refreshWpBackups();
             } else if(p.status==='error'){
-                btn.disabled=false; btn.innerHTML=orig;
+                btn.disabled=false; btn.innerHTML=orig; hideCancelWp();
 toast('\u2717 '+(p.error||'Full backup failed!'),true);
             } else {
-                btn.disabled=false; btn.innerHTML=orig;
+                btn.disabled=false; btn.innerHTML=orig; hideCancelWp();
                 refreshWpBackups();
             }
         },
@@ -595,6 +619,7 @@ toast('\u2717 '+(p.error||'Full backup failed!'),true);
         if(!res.success) return;
         var p=res.data;
         if(p.status==='running'){
+            showCancelWp();
             btn.disabled=true;
             btn.innerHTML='<span class="bsp"></span> Backing up <span id="wp-bp-progress">'+(p.pct||0)+'%</span>';
             pollWpBackup();
@@ -731,7 +756,7 @@ function pollImportStatus(onDone,onError,basePct){
     var cnt=0;
     (function poll(){
         cnt++;
-        if(cnt>300){
+        if(cnt>1500){
             toast('Import timed out.',true);
             if(onError) onError();
             return;

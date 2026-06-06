@@ -119,7 +119,7 @@ function bdopt_render_page() {
             bdopt_card('spam',        'shield-alt',       'c-spm', 'Spam & Trash Comments', $counts['spam'],        'All spam & trash comments');
             bdopt_card('trashed',     'trash',            'c-tsh', 'Trashed Posts',         $counts['trashed'],     'All posts & pages in trash',
                 '<label style="display:flex;align-items:center;gap:7px;font-size:12px;margin-top:12px;cursor:pointer;padding-top:11px;border-top:1px solid #f0f0f1"><span class="tog"><input type="checkbox" id="s-trashed" ' . checked( (int) bdopt_s('clean_trashed'), 1, false ) . '><span class="tog-sl"></span></span> Include in Clean All</label>');
-            bdopt_card('orphan_meta', 'admin-site-alt3',  'c-orp', 'Orphan Meta',           $counts['orphan_meta'], 'Postmeta/commentmeta/usermeta with no parent');
+            bdopt_card('orphan_meta', 'admin-site-alt3',  'c-orp', 'Orphan Meta',           $counts['orphan_meta'], 'Postmeta/commentmeta/usermeta/HPOS order meta with no parent');
             bdopt_card('oembed',      'video-alt3',       'c-oem', 'oEmbed Cache',          $counts['oembed'],      'Cached oEmbed data from postmeta');
             bdopt_card('personal_data', 'admin-users',    'c-pdr', 'Personal Data',          $counts['personal_data'], 'Old privacy/export requests (30+ days)');
             bdopt_card_opt();
@@ -687,7 +687,7 @@ function bdopt_render_page() {
         </div>
         <?php
         bdopt_setting_toggle('s-spam','Spam &amp; Trash Comments','Delete all spam &amp; trash comments',$chk('clean_spam'));
-        bdopt_setting_toggle('s-orphan','Orphan Meta','Delete postmeta/commentmeta/usermeta with no parent',$chk('clean_orphan_meta'));
+        bdopt_setting_toggle('s-orphan','Orphan Meta','Delete postmeta/commentmeta/usermeta/HPOS order meta with no parent',$chk('clean_orphan_meta'));
         bdopt_setting_toggle('s-optimize','Table Optimization','Rebuilds tables &amp; reclaims disk space (MyISAM + InnoDB)',$chk('optimize_tables'));
         ?>
         <div class="save-row" style="justify-content:flex-end">

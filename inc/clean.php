@@ -309,6 +309,13 @@ function bdopt_clean_orphan_meta() {
     $del += (int) $wpdb->query(
         "DELETE um FROM `{$wpdb->usermeta}` um LEFT JOIN `{$wpdb->users}` u ON um.user_id = u.ID WHERE u.ID IS NULL"
     );
+    $orders_table = $wpdb->prefix . 'wc_orders';
+    $meta_table   = $wpdb->prefix . 'wc_orders_meta';
+    if ( $wpdb->get_var( "SHOW TABLES LIKE '{$meta_table}'" ) === $meta_table ) {
+        $del += (int) $wpdb->query(
+            "DELETE om FROM `{$meta_table}` om LEFT JOIN `{$orders_table}` o ON om.order_id = o.id WHERE o.id IS NULL"
+        );
+    }
     return $del;
 }
 
@@ -430,6 +437,13 @@ function bdopt_get_counts() {
     $d['orphan_meta'] = (int)$wpdb->get_var(
         "SELECT COUNT(*) FROM `{$wpdb->postmeta}` pm LEFT JOIN `{$wpdb->posts}` p ON pm.post_id=p.ID WHERE p.ID IS NULL"
     );
+    $hpos_meta = $wpdb->prefix . 'wc_orders_meta';
+    $hpos_orders = $wpdb->prefix . 'wc_orders';
+    if ( $wpdb->get_var( "SHOW TABLES LIKE '{$hpos_meta}'" ) === $hpos_meta ) {
+        $d['orphan_meta'] += (int)$wpdb->get_var(
+            "SELECT COUNT(*) FROM `{$hpos_meta}` om LEFT JOIN `{$hpos_orders}` o ON om.order_id = o.id WHERE o.id IS NULL"
+        );
+    }
     $d['oembed'] = (int)$wpdb->get_var(
         "SELECT COUNT(*) FROM `{$wpdb->postmeta}` WHERE meta_key LIKE '_oembed_%'"
     );

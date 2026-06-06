@@ -361,8 +361,11 @@ function bdopt_delete_all_orders() {
     $r = $wpdb->query( "DELETE pm FROM `{$wpdb->postmeta}` pm LEFT JOIN `{$wpdb->posts}` p ON pm.post_id = p.ID WHERE p.ID IS NULL" );
     if ( $r !== false ) $total += $r;
     $wpdb->query( 'SET FOREIGN_KEY_CHECKS=1' );
-    $like = $wpdb->esc_like( 'wc_' );
-    $wpdb->query( $wpdb->prepare( "DELETE FROM `{$wpdb->prefix}actionscheduler_actions` WHERE hook LIKE %s", '%' . $like . '%' ) );
+    $as_tbl = $wpdb->prefix . 'actionscheduler_actions';
+    if ( $wpdb->get_var( "SHOW TABLES LIKE '{$as_tbl}'" ) === $as_tbl ) {
+        $like = $wpdb->esc_like( 'wc_' );
+        $wpdb->query( $wpdb->prepare( "DELETE FROM `{$as_tbl}` WHERE hook LIKE %s", '%' . $like . '%' ) );
+    }
     return $total;
 }
 

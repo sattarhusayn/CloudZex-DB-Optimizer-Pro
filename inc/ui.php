@@ -289,13 +289,13 @@ function bdopt_render_page() {
             <span style="font-size:12px;color:#646970">Total <strong id="m-filter-total"><?php echo number_format( (int) $counts['orders'] ); ?></strong> orders match filter</span>
             <div style="display:flex;gap:8px;align-items:center">
                 <button class="button" type="button" id="btn-download-orders" style="color:#2271b1;border-color:#2271b1">
-                    <span class="dashicons dashicons-download"></span> Download CSV
+                    <span style="display:inline-flex;align-items:center;gap:4px"><span class="dashicons dashicons-download" style="font-size:16px;width:16px;height:16px"></span> Download CSV</span>
                 </button>
                 <button class="button" type="button" id="btn-manual-delete" style="color:#fff;background:#d63638;border-color:#d63638">
-                    <span class="dashicons dashicons-trash"></span> Delete Selected Orders
+                    <span style="display:inline-flex;align-items:center;gap:4px"><span class="dashicons dashicons-trash" style="font-size:16px;width:16px;height:16px"></span> Delete Selected Orders</span>
                 </button>
                 <button class="button" type="button" id="btn-delete-all-orders" style="color:#b32d2e;border-color:#b32d2e">
-                    <span class="dashicons dashicons-warning"></span> Delete ALL Orders
+                    <span style="display:inline-flex;align-items:center;gap:4px"><span class="dashicons dashicons-warning" style="font-size:16px;width:16px;height:16px"></span> Delete ALL Orders</span>
                 </button>
             </div>
         </div>

@@ -105,8 +105,7 @@
 #bdopt .btn-ref{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;background:#f6f7f7;border:1px solid #c3c4c7;color:#1d2327;border-radius:5px;font-size:12px;font-weight:500;cursor:pointer;transition:.15s;font-family:inherit}
 #bdopt .btn-ref:hover{background:#fff;border-color:#8c8f94}
 #bdopt .btn-ref .dashicons{font-size:15px}
-#btn-download-orders,#btn-manual-delete,#btn-delete-all-orders{height:34px;padding-left:16px;padding-right:16px;display:inline-flex;align-items:center;gap:5px}
-#btn-download-orders .dashicons,#btn-manual-delete .dashicons,#btn-delete-all-orders .dashicons{font-size:16px;width:16px;height:16px}
+#btn-download-orders,#btn-manual-delete,#btn-delete-all-orders{padding:2px 16px!important}
 #bdopt .loading-row{padding:36px 20px;text-align:center;color:#8c8f94;display:flex;align-items:center;justify-content:center;gap:10px;font-size:13px}
 #bdopt .s-ctrl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:6px;width:100%}
 #bdopt .os-lbl{display:flex;align-items:center;gap:4px;font-size:12px;cursor:pointer;border:1px solid #ddd;border-radius:4px;padding:4px 14px 4px 8px}

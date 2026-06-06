@@ -10,6 +10,7 @@ if ( ! defined( 'ABSPATH' ) ) exit;
  *   BDOPT_REDIS_DB    (default: 0)
  */
 
+if ( ! class_exists( 'WP_Object_Cache' ) ) {
 class WP_Object_Cache {
 
     private $redis;
@@ -182,4 +183,5 @@ class WP_Object_Cache {
     public function __destruct() {
         $this->close();
     }
+}
 }
